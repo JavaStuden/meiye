@@ -1,0 +1,10 @@
+<view class="cart-page">
+  <view wx:if="{{items.length}}" class="cart-list">
+    <view wx:for="{{items}}" wx:key="productId" class="cart-row">
+      <view class="check {{item.checked === false ? '' : 'checked'}}" data-id="{{item.productId}}" bindtap="toggleItem">{{item.checked === false ? '' : '✓'}}</view>
+      <image src="{{item.product.cover}}" mode="aspectFill"/><view class="cart-info"><text class="cart-name">{{item.product.name}}</text><text class="price">¥{{item.product.price}}</text><view class="quantity"><button data-id="{{item.productId}}" data-delta="-1" bindtap="changeQuantity">−</button><text>{{item.quantity}}</text><button data-id="{{item.productId}}" data-delta="1" bindtap="changeQuantity">＋</button><text class="remove" data-id="{{item.productId}}" bindtap="removeItem">删除</text></view></view>
+    </view>
+  </view>
+  <view wx:else class="empty-cart"><text class="empty-icon">袋</text><text>购物车为空</text><button bindtap="openStore">去看看直播商品</button></view>
+  <view wx:if="{{items.length}}" class="checkout-bar"><text>合计 <text class="total">¥{{total}}</text></text><button bindtap="checkout">去结算（{{count}}）</button></view>
+</view>

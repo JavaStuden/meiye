@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>美业直播工具 · 直播工作台 V2.2.9</title>
+  <link rel="stylesheet" th:href="@{/style.css(v='20261013-032957')}" href="/style.css?v=20261013-032957">
+  <link rel="stylesheet" th:href="@{/flows.css(v='20261013-032957')}" href="/flows.css?v=20261013-032957">
+  <link rel="stylesheet" th:href="@{/live-room.css(v='20261013-032957')}" href="/live-room.css?v=20261013-032957">
+  <link rel="stylesheet" th:href="@{/feed-playback.css(v='20261013-032957')}" href="/feed-playback.css?v=20261013-032957">
+  <link rel="stylesheet" th:href="@{/live-operations.css(v='20261028-v2')}" href="/live-operations.css?v=20261028-v2">
+  <meta name="_csrf" th:if="${_csrf != null}" th:content="${_csrf.token}">
+  <meta name="_csrf_header" th:if="${_csrf != null}" th:content="${_csrf.headerName}">
+</head>
+<body>
+  <header class="platform-bar">
+    <div class="brand"><span class="brand-mark">播</span><b>美业直播</b><span class="workspace-name">直播工作台</span></div>
+    <div class="surface-tabs" role="tablist" aria-label="体验端切换">
+      <button data-surface="pc" onclick="switchSurface('pc')">PC 直播后台</button>
+      <button data-surface="mini" onclick="switchSurface('mini')">小程序观看端</button>
+      <button data-surface="h5" onclick="switchSurface('h5')">H5 观看端</button>
+      <button data-surface="capture" onclick="switchSurface('capture')">手机录制APP</button>
+    </div>
+    <span class="prototype">交互原型 V2.2.9 · 业务模拟</span>
+  </header>
+  <div id="app"></div>
+  <dialog id="dialog"></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script th:src="@{/app.js(v='20261013-032957')}" src="/app.js?v=20261013-032957"></script>
+  <script th:src="@{/flows.js(v='20261013-032957')}" src="/flows.js?v=20261013-032957"></script>
+  <script th:src="@{/live-room.js(v='20261013-032957')}" src="/live-room.js?v=20261013-032957"></script>
+  <script th:src="@{/live-operations.js(v='20261029-cos-v1')}" src="/live-operations.js?v=20261029-cos-v1"></script>
+  <script>
+    if (typeof window !== 'undefined') {
+      surface = 'pc';
+      page = 'overview';
+      if (typeof render === 'function') render();
+    }
+  </script>
+</body>
+</html>

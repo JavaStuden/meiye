@@ -1,0 +1,19 @@
+{
+  "JarSHA256": "30653A39C6E8BED87EAD6840F2D057A2205D828E0768C5248A9A83D0E7727C62",
+  "JarBytes": 68419244,
+  "Resources": [
+    {
+      "Resource": "static/assets/app.js",
+      "Matches": true
+    },
+    {
+      "Resource": "templates/viewer.html",
+      "Matches": true
+    },
+    {
+      "Resource": "templates/products.html",
+      "Matches": true
+    }
+  ],
+  "ContainsProductionClock": true
+}

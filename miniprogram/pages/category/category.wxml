@@ -1,0 +1,10 @@
+<view class="category-page">
+  <view class="category-layout">
+    <scroll-view class="category-menu" scroll-y><view wx:for="{{categories}}" wx:key="*this" class="category-item {{activeCategory === item ? 'active' : ''}}" data-category="{{item}}" bindtap="selectCategory">{{item}}</view></scroll-view>
+    <scroll-view class="category-content" scroll-y>
+      <view class="category-banner"><image src="/assets/beauty-products.jpg" mode="aspectFill"/><text>直播好物 · 精选美业产品</text></view>
+      <view class="product-grid"><view wx:for="{{products}}" wx:key="id" class="product-card" data-id="{{item.id}}" bindtap="openProduct"><image src="{{item.cover}}" mode="aspectFill"/><text class="product-name">{{item.name}}</text><text class="product-tag">{{item.tag}}</text><view class="price-row"><text class="price">¥{{item.price}}</text><text class="old-price">¥{{item.original}}</text></view><text class="sold">已售{{item.sold}}</text></view></view>
+      <view wx:if="{{products.length === 0}}" class="empty">暂无商品</view>
+    </scroll-view>
+  </view>
+</view>

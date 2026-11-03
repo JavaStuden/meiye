@@ -1,0 +1,58 @@
+{
+  "pages": [
+    "pages/home/home",
+    "pages/store/store",
+    "pages/category/category",
+    "pages/cart/cart",
+    "pages/feature/feature",
+    "pages/watch/watch",
+    "pages/mine/mine"
+  ],
+  "window": {
+    "navigationBarTitleText": "美业直播",
+    "navigationBarBackgroundColor": "#ffffff",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f4f5f7"
+  },
+  "tabBar": {
+    "color": "#827d89",
+    "selectedColor": "#f3447b",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/home/home",
+        "text": "直播",
+        "iconPath": "assets/tab-live.png",
+        "selectedIconPath": "assets/tab-live-active.png"
+      },
+      {
+        "pagePath": "pages/store/store",
+        "text": "商品",
+        "iconPath": "assets/tab-store.png",
+        "selectedIconPath": "assets/tab-store-active.png"
+      },
+      {
+        "pagePath": "pages/category/category",
+        "text": "分类",
+        "iconPath": "assets/tab-category.png",
+        "selectedIconPath": "assets/tab-category-active.png"
+      },
+      {
+        "pagePath": "pages/cart/cart",
+        "text": "购物车",
+        "iconPath": "assets/tab-cart.png",
+        "selectedIconPath": "assets/tab-cart-active.png"
+      },
+      {
+        "pagePath": "pages/mine/mine",
+        "text": "我的",
+        "iconPath": "assets/tab-mine.png",
+        "selectedIconPath": "assets/tab-mine-active.png"
+      }
+    ]
+  },
+  "style": "v2",
+  "lazyCodeLoading": "requiredComponents",
+  "sitemapLocation": "sitemap.json"
+}

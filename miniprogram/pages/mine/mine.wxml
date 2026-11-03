@@ -1,0 +1,7 @@
+<view class="mine-page" wx:if="{{state}}">
+  <view class="profile-card"><view class="profile-avatar">美</view><view class="profile-copy"><text class="profile-title">美业体验用户</text><text class="profile-subtitle">体验会员 · 账号 MY1008</text></view><text class="profile-arrow">›</text><view class="profile-stats"><view><text>¥{{state.walletText}}</text><label>账户余额</label></view><view><text>{{state.points}}</text><label>我的积分</label></view><view><text>{{state.coupons.length}}</text><label>优惠券</label></view></view></view>
+  <view class="demo-note"><text class="note-mark">!</text><text>当前为演示版本，暂未接入微信登录、真实订单和支付。</text></view>
+  <view class="mine-section order-section"><view class="section-heading"><text>我的订单</text><text class="section-link" bindtap="openOrders">全部订单 ›</text></view><view class="order-icons"><view wx:for="{{orderActions}}" wx:key="view" class="order-action" data-view="{{item.view}}" bindtap="openOrders"><text class="order-icon">{{item.icon}}</text><text>{{item.label}}</text></view></view></view>
+  <view class="mine-section"><view wx:for="{{menu}}" wx:key="view" class="menu-row" data-view="{{item.view}}" bindtap="openMenu"><text class="menu-icon">{{item.icon}}</text><text class="menu-label">{{item.label}}</text><text class="menu-arrow">›</text></view></view>
+  <view class="version">美业直播 · 小程序观看端演示版</view>
+</view>

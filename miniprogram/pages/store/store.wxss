@@ -1,0 +1,26 @@
+.store-page { padding-bottom: 40rpx; }
+.store-search { display: flex; align-items: center; gap: 14rpx; padding: 18rpx 26rpx; background: #f3447b; }
+.store-search input { flex: 1; height: 68rpx; padding: 0 24rpx; border-radius: 36rpx; background: #fff; font-size: 23rpx; }
+.store-search button { margin: 0; padding: 0 12rpx; color: #fff; background: transparent; font-size: 23rpx; }
+.store-search button::after { border: 0; }
+.store-banner { position: relative; height: 300rpx; margin: 0 24rpx; overflow: hidden; border-radius: 12rpx; background: #f2d7d4; }
+.store-banner image { width: 100%; height: 100%; }
+.banner-copy { position: absolute; left: 28rpx; top: 42rpx; display: flex; flex-direction: column; color: #8d314f; }
+.banner-tag { font-size: 20rpx; }.banner-title { margin-top: 10rpx; font-size: 40rpx; font-weight: 800; }.banner-sub { margin-top: 6rpx; font-size: 22rpx; }
+.shortcut-card { position: relative; margin: -20rpx 24rpx 18rpx; padding: 26rpx 18rpx 20rpx; border-radius: 14rpx; background: #fff; box-shadow: 0 4rpx 16rpx #3323380b; }
+.shortcut-grid { display: grid; grid-template-columns: repeat(5, 1fr); row-gap: 24rpx; }
+.shortcut { display: flex; flex-direction: column; align-items: center; gap: 8rpx; color: #53505a; font-size: 19rpx; }
+.shortcut-icon { display: grid; width: 62rpx; height: 62rpx; place-items: center; border-radius: 50%; color: #f3447b; background: #fff0f4; font-size: 30rpx; }
+.color-1 { color: #9c73dc; background: #f4efff; }.color-2 { color: #f39b42; background: #fff5e7; }.color-3 { color: #8b71d5; background: #f2efff; }.color-4 { color: #f26b93; background: #fff0f4; }
+.headline { display: flex; align-items: center; gap: 12rpx; margin: 0 24rpx 18rpx; padding: 19rpx 17rpx; border-radius: 10rpx; background: #fff; color: #5d5863; font-size: 20rpx; }
+.headline-tag { flex-shrink: 0; color: #f3447b; font-weight: 700; }.arrow { margin-left: auto; color: #aaa; font-size: 30rpx; }
+.section-heading { display: flex; justify-content: space-between; align-items: center; padding: 20rpx 28rpx 16rpx; color: #2c2932; font-size: 29rpx; font-weight: 700; }
+.section-link { color: #aaa5af; font-size: 20rpx; font-weight: 400; }
+.coupon-section { margin: 10rpx 24rpx 18rpx; padding-bottom: 8rpx; border-radius: 14rpx; background: #fff; }
+.coupon-section .section-heading { padding-top: 22rpx; }
+.coupon-row { display: flex; gap: 12rpx; padding: 0 16rpx 16rpx; }
+.coupon { display: flex; flex: 1; justify-content: space-between; align-items: center; padding: 15rpx 12rpx; border-radius: 9rpx; background: #fff0f4; }
+.coupon > view { display: flex; align-items: center; gap: 8rpx; }.coupon-amount { color: #dc4272; font-size: 33rpx; font-weight: 700; }.coupon-label { color: #df557d; font-size: 17rpx; line-height: 1.5; }
+.coupon button { margin: 0; padding: 5rpx 9rpx; border-radius: 5rpx; color: #fff; background: #f3447b; font-size: 17rpx; line-height: 1.4; }.coupon button::after { border: 0; }
+.live-heading { padding-top: 18rpx; }.mini-room { position: relative; display: flex; align-items: center; gap: 14rpx; margin: 0 24rpx 12rpx; padding: 12rpx; border-radius: 10rpx; background: #fff; }.mini-room image { flex: none; width: 130rpx; height: 100rpx; border-radius: 8rpx; }.mini-room-copy { display: flex; flex: 1; flex-direction: column; gap: 7rpx; min-width: 0; }.room-name { overflow: hidden; color: #2d2932; font-size: 21rpx; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }.room-meta { color: #a5a0aa; font-size: 17rpx; }.room-state { position: absolute; right: 13rpx; top: 13rpx; color: #f3447b; font-size: 17rpx; }
+.product-heading { padding-top: 22rpx; }.product-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14rpx; padding: 0 24rpx; }.product-card { display: flex; min-width: 0; flex-direction: column; gap: 8rpx; padding: 12rpx; border-radius: 10rpx; background: #fff; }.product-card image { width: 100%; height: 240rpx; border-radius: 8rpx; }.product-name { min-height: 62rpx; color: #35313b; font-size: 21rpx; }.product-price { color: #f3447b; font-size: 25rpx; font-weight: 700; }.old-price { margin-left: 8rpx; color: #aaa5af; font-size: 18rpx; text-decoration: line-through; }.product-tag { align-self: flex-start; padding: 3rpx 8rpx; color: #f06c91; background: #fff0f4; font-size: 17rpx; }

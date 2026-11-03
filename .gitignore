@@ -1,0 +1,9 @@
+/target/
+/data/
+*.log
+.env
+.idea/
+.vscode/
+/keys/
+/miniprogram/project.private.config.json
+*.upload-*

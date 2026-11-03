@@ -1,0 +1,27 @@
+/* Compact familiar replay controls and a per-room backend height setting. */
+.room-interaction-stack{max-height:var(--room-feed-height,44%);}
+.room-reference .room-comments{display:flex;flex:1 1 auto;min-height:0;max-height:none;overflow:auto;}
+.has-replay-controls .room-interaction-stack,.has-featured .room-interaction-stack{max-height:var(--room-feed-height,44%);}
+.room-player-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:9px;align-items:center;min-height:42px;}
+.room-playback-toggle{width:28px;height:34px;min-height:34px;padding:0;border:0;background:transparent;color:#fff;font-size:22px;line-height:1;text-align:center;}
+.room-player-timeline{min-width:0;display:flex;flex-direction:column;gap:1px;}
+.room-player-time{display:flex;gap:4px;align-items:center;font-size:10px;font-variant-numeric:tabular-nums;color:#fff;white-space:nowrap;}
+.room-player-time span+span{color:#ffffffae;}
+.room-player-timeline input[type=range]{width:100%;height:15px;margin:0;accent-color:#fff;cursor:pointer;}
+.room-player-timeline input[type=range]:disabled{opacity:.45;cursor:not-allowed;}
+.room-rate-wrap{position:relative;justify-self:end;}
+.room-playback-rate{min-height:30px;padding:3px 8px;border:0;border-radius:16px;background:#ffffff18;color:#fff;font-size:11px;white-space:nowrap;}
+.room-speed-menu{position:absolute;right:0;bottom:calc(100% + 8px);display:flex;gap:4px;padding:5px;border:1px solid #ffffff30;border-radius:18px;background:rgba(14,16,22,.92);box-shadow:0 4px 16px #0005;z-index:8;}
+.room-speed-menu[hidden]{display:none;}
+.room-speed-menu button{min-height:28px;padding:3px 7px;border:0;border-radius:14px;background:transparent;color:#fff;font-size:10px;white-space:nowrap;}
+.room-speed-menu button.active{background:#ffffff32;color:#fff;font-weight:700;}
+.range-row{display:flex;align-items:center;gap:12px;}
+.range-row input[type=range]{flex:1;min-width:0;accent-color:#546df3;}
+.range-row output{min-width:42px;color:#546df3;font-weight:700;text-align:right;font-variant-numeric:tabular-nums;}
+@media(max-width:380px){
+  .room-interaction-stack,.has-replay-controls .room-interaction-stack,.has-featured .room-interaction-stack{max-height:var(--room-feed-height,44%);}
+  .room-player-row{grid-template-columns:27px minmax(0,1fr) auto;gap:6px;}
+  .room-playback-rate{font-size:10px;padding:3px 6px;}
+  .room-speed-menu{gap:2px;padding:4px;}
+  .room-speed-menu button{padding:3px 5px;font-size:9px;}
+}

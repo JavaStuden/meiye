@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.meiye.live.BackendAcceptanceTest
+-------------------------------------------------------------------------------
+Tests run: 43, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 10.03 s -- in com.meiye.live.BackendAcceptanceTest

@@ -1,0 +1,12 @@
+<view class="page live-page">
+  <view class="section-head"><view><text class="section-title">直播中心</text><text class="section-subtitle">直播、预告与课程回放</text></view><button class="plain-link" data-view="news" bindtap="openFeature">商城头条</button></view>
+  <scroll-view class="filter-scroll" scroll-x show-scrollbar="false"><view class="filter-row"><view wx:for="{{filters}}" wx:key="*this" class="filter-chip {{activeFilter === item ? 'active' : ''}}" data-filter="{{item}}" bindtap="selectFilter">{{item}}</view></view></scroll-view>
+  <view class="room-list">
+    <view wx:for="{{visibleRooms}}" wx:key="id" class="room-card">
+      <view class="room-cover-wrap" data-id="{{item.id}}" bindtap="openRoom"><image class="room-cover" src="{{item.cover}}" mode="aspectFill"/><view class="cover-shade"></view><view class="room-status {{item.status === '直播中' ? 'live' : item.status === '已结束' ? 'ended' : 'upcoming'}}"><view class="status-dot"></view>{{item.status}}</view><view class="cover-play">▶</view></view>
+      <view class="room-info"><text class="room-title">{{item.title}}</text><view class="room-meta"><text>{{item.mode}} · {{item.time}}</text><text>♡ {{item.likes}}</text></view><view class="room-footer"><text class="room-host">{{item.host}}</text><button wx:if="{{item.status === '待开播'}}" class="room-button" data-id="{{item.id}}" bindtap="remind">{{reminders[item.id] ? '已预约' : '预约提醒'}}</button><button wx:else class="room-button" data-id="{{item.id}}" bindtap="openRoom">{{item.mode === '录播' ? '观看回放' : '进入直播间'}}</button></view></view>
+    </view>
+    <view wx:if="{{visibleRooms.length === 0}}" class="empty-state">暂无相关场次</view>
+  </view>
+  <view class="footer-note">当前为演示版本 · 播放、评论与互动内容为演示数据</view>
+</view>

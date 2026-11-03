@@ -1,0 +1,27 @@
+<!DOCTYPE html><html lang="zh-CN" xmlns:th="http://www.thymeleaf.org"><head th:replace="~{fragments :: head(${room == null ? '创建场次' : '配置场次'})}"></head><body>
+<header th:replace="~{fragments :: header('admin')}"></header><div class="admin-layout"><aside th:replace="~{fragments :: sidebar('form')}"></aside><main class="admin-main">
+<div class="breadcrumb"><span>管理后台 <b>/</b> 场次配置</span><a th:href="@{/admin}">← 返回工作台</a></div>
+<div class="page-title"><div><span class="eyebrow">ROOM SETTINGS</span><h1 th:text="${room == null ? '创建一个新的直播场次' : '配置直播场次'}">配置直播场次</h1><p>选择内容形式，接入媒体，让每次观看都有温度。</p></div><a class="button" th:if="${room != null}" th:href="@{/rooms/{id}(id=${room.id})}">预览观看页 ↗</a></div>
+<div class="notice error" role="alert" th:if="${error}" th:text="${error}">请检查输入内容。</div>
+<form th:action="@{/admin/rooms}" method="post" class="room-edit-form">
+<input th:if="${room != null}" type="hidden" name="id" th:value="${room.id}">
+<div class="form-layout"><div>
+<section class="card form-card"><div class="section-heading"><h2><span class="section-number">01</span> 基本信息</h2><span class="muted">带 * 为必填项</span></div><div class="form-grid">
+<div class="field span-two"><label for="title">场次名称 <em>*</em></label><input id="title" name="title" required maxlength="120" placeholder="例如：美业经营课堂 · 门店盈利方案" th:value="${room != null ? room.title : ''}"></div>
+<div class="field"><label for="host">主播 / 讲师 <em>*</em></label><input id="host" name="host" required maxlength="60" placeholder="填写主播或机构名称" th:value="${room != null ? room.host : ''}"></div>
+<div class="field"><label for="status">场次状态 <em>*</em></label><select id="status" name="status"><option value="DRAFT" th:selected="${room == null || room.status.toString() == 'DRAFT'}">草稿</option><option value="SCHEDULED" th:selected="${room != null && room.status.toString() == 'SCHEDULED'}">待开播</option><option value="LIVE" th:selected="${room != null && room.status.toString() == 'LIVE'}">直播中</option><option value="ENDED" th:selected="${room != null && room.status.toString() == 'ENDED'}">已结束</option></select></div>
+<div class="field span-two"><label for="description">场次介绍</label><textarea id="description" name="description" rows="3" maxlength="2000" placeholder="介绍课程内容、适合人群或本场直播亮点" th:text="${room != null ? room.description : ''}"></textarea></div>
+<div class="field span-two"><label for="announcement">直播间公告</label><textarea id="announcement" name="announcement" rows="2" maxlength="1000" placeholder="欢迎来到直播间，请文明交流。" th:text="${room != null ? room.announcement : ''}"></textarea><small>展示在观看端的评论区上方。</small></div>
+</div></section>
+<section class="card form-card"><div class="section-heading"><h2><span class="section-number">02</span> 播放配置</h2><span class="soft-badge">自行接入媒体</span></div>
+<div class="field"><label for="mode">播放方式 <em>*</em></label><select id="mode" name="mode"><option value="LIVE" th:selected="${room == null || room.mode.toString() == 'LIVE'}">实时直播 · 播放现有直播流</option><option value="REPLAY" th:selected="${room != null && room.mode.toString() == 'REPLAY'}">录播回放 · 自由播放与拖动</option><option value="PSEUDO" th:selected="${room != null && room.mode.toString() == 'PSEUDO'}">伪直播 · 按排期同步播放录播</option></select></div>
+<p id="mode-help" class="field-help">实时直播需要你自行提供已有的直播流地址。</p>
+<div class="field"><label for="streamUrl">播放源地址</label><input id="streamUrl" name="streamUrl" inputmode="url" pattern="https?://.+|/media/.+" maxlength="2000" placeholder="https://…/live.m3u8 或 /media/video.mp4" th:value="${room != null ? room.streamUrl : ''}"><small>支持 HTTP(S) MP4、HLS 或 /media/ 下的本地文件。地址需允许浏览器访问并正确设置跨域。留空时显示「待接入播放源」。</small></div>
+<div class="form-grid"><div class="field"><label for="scheduledAt">计划开始时间</label><input id="scheduledAt" name="scheduledAt" type="datetime-local" th:value="${scheduledAtLocal}"><small>北京时间（Asia/Shanghai）；伪直播必填。</small></div><div class="field"><label for="durationSeconds">内容时长（秒） <em>*</em></label><input id="durationSeconds" name="durationSeconds" type="number" min="1" max="86400" required th:value="${room != null ? room.durationSeconds : 3600}"><small>伪直播需填写实际时长；其他模式填写预期时长。</small></div></div>
+<div class="field"><label for="posterUrl">封面图片地址</label><input id="posterUrl" name="posterUrl" maxlength="2000" placeholder="/assets/studio-poster.svg 或 https://…" th:value="${room != null ? room.posterUrl : '/assets/studio-poster.svg'}"><small>默认封面是本应用的原创插画，并非实际直播画面。</small></div>
+</section>
+<section class="card form-card"><div class="section-heading"><h2><span class="section-number">03</span> 互动设置</h2></div><label class="switch-field"><div><strong>允许观众留言</strong><small>开启后，观众可发布评论，并查看其他观众的新留言。</small></div><input type="checkbox" name="commentsEnabled" value="true" th:checked="${room == null || room.commentsEnabled}"></label></section>
+</div><aside class="form-aside"><section class="card"><div class="small-illustration"><svg><use href="#i-live"/></svg></div><h2>开播之前，准备好这些</h2><ul class="checklist"><li><svg><use href="#i-check"/></svg>准确的场次名称与公告</li><li><svg><use href="#i-check"/></svg>可供浏览器访问的媒体地址</li><li><svg><use href="#i-check"/></svg>伪直播的开始时间与时长</li><li><svg><use href="#i-check"/></svg>保存后检查观看端播放效果</li></ul><p class="aside-copy">「直播中」是场次状态。真实播放取决于媒体源是否可用，本应用本身不提供采集或推流服务。</p></section></aside></div>
+<div class="form-actions"><a class="button" th:href="@{/admin}">取消</a><button class="button primary" type="submit"><svg><use href="#i-check"/></svg> 保存场次配置</button></div>
+</form><footer class="page-footer">修改后，观看端会在下一次刷新配置时更新。</footer>
+</main></div><div th:replace="~{fragments :: feedback}"></div></body></html>

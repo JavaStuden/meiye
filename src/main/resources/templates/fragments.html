@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head th:fragment="head(title)">
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title th:text="${title} + ' · 美业直播'">美业直播</title>
+  <meta name="_csrf" th:content="${_csrf.token}"><meta name="_csrf_header" th:content="${_csrf.headerName}">
+  <link rel="stylesheet" th:href="@{/assets/app.css}"><script defer th:src="@{/assets/vendor/hls.min.js}"></script><script defer th:src="@{/assets/app.js}"></script>
+</head>
+<body>
+<header class="platform-bar" th:fragment="header(surface)">
+  <svg class="svg-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10H3ZM9 20v-7h6v7"/></symbol>
+    <symbol id="i-live" viewBox="0 0 24 24"><rect x="3" y="5" width="14" height="14" rx="3"/><path d="m17 10 5-3v10l-5-3"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4Z"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 18h4"/></symbol>
+    <symbol id="i-order" viewBox="0 0 24 24"><path d="M5 3h14v18l-3-2-4 2-4-2-3 2ZM9 7h6M9 11h6M9 15h3"/></symbol>
+    <symbol id="i-bag" viewBox="0 0 24 24"><path d="M4 8h16l1 13H3ZM8 9V6a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-gift" viewBox="0 0 24 24"><path d="M3 8h18v4H3ZM5 12v9h14v-9M12 8v13M12 8C3 8 5 0 9 3Zm0 0c9 0 7-8 3-5Z"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M3 4h18v13H9l-6 4ZM7 8h10M7 12h6"/></symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 21C-5 9 2-3 12 6c10-9 17 3 0 15Z"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><path d="m16 3 6 5-6 5M21 8H11a7 7 0 0 0-7 7M3 13v8h17v-5"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L20 5"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 3"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="m10 3-1 3-3-1-3 5 3 2-3 2 3 5 3-1 1 3h4l1-3 3 1 3-5-3-2 3-2-3-5-3 1-1-3Z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 2v6m8-6v6M4 11h16m-9 4 2 2 4-4"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M2 21v-3c0-6 14-6 14 0v3M17 3c5 0 5 8 0 8m2 4c3 1 3 3 3 6"/></symbol>
+    <symbol id="i-coupon" viewBox="0 0 24 24"><path d="M3 5h18v5a2 2 0 0 0 0 4v5H3v-5a2 2 0 0 0 0-4ZM9 8v8m5-7h3m-3 6h3"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 2 3 7 7 1-5 5 1 7-6-4-6 4 1-7-5-5 7-1Z"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 3H3v18h6m6-16 7 7-7 7M8 12h14"/></symbol>
+  </defs></svg>
+  <a class="brand" th:href="@{/meiye/}"><span class="brand-mark">播</span><strong>美业直播</strong><span class="workspace-name">直播工作台</span></a>
+  <nav class="surface-tabs" aria-label="体验端切换">
+    <a th:href="@{/admin}" th:classappend="${surface == 'admin'} ? 'active'">PC 直播后台</a>
+    <a th:href="@{/meiye/(view='mini',room=1)}" th:classappend="${surface == 'mini'} ? 'active'">小程序观看端</a>
+    <a th:href="@{/meiye/(view='h5',room=1)}" th:classappend="${surface == 'h5'} ? 'active'">H5 观看端</a>
+  </nav>
+  <span class="project-label"><span class="tiny-dot"></span> Java 应用 · 业务演示</span>
+</header>
+<aside class="sidebar" th:fragment="sidebar(active)">
+  <div class="shop-select"><span class="shop-avatar">悦</span><div><strong>悦己美学 · 直播中心</strong><small>品牌运营工作空间</small></div></div>
+  <div class="nav-label">直播与内容</div>
+  <nav aria-label="后台导航">
+    <a th:href="@{/admin}" class="nav-item" th:classappend="${active == 'rooms'} ? 'active'"><svg><use href="#i-live"/></svg>直播工作台<span class="nav-arrow">›</span></a>
+    <a th:href="@{/admin/rooms/new}" class="nav-item" th:classappend="${active == 'form'} ? 'active'"><svg><use href="#i-settings"/></svg>场次配置</a>
+    <a th:href="@{/admin/orders}" class="nav-item" th:classappend="${active == 'orders'} ? 'active'"><svg><use href="#i-order"/></svg>演示订单</a>
+    <a th:href="@{/admin/products}" class="nav-item" th:classappend="${active == 'products'} ? 'active'"><svg><use href="#i-bag"/></svg>商品配置</a>
+    <div class="nav-label">观看与互动</div>
+    <a th:href="@{/rooms/1}" class="nav-item"><svg><use href="#i-phone"/></svg>实时直播</a>
+    <a th:href="@{/rooms/3}" class="nav-item"><svg><use href="#i-play"/></svg>录播回放</a>
+    <a th:href="@{/rooms/2}" class="nav-item"><svg><use href="#i-clock"/></svg>伪直播</a>
+  </nav>
+  <div class="sidebar-note"><svg><use href="#i-live"/></svg><strong>让专业，被更多人看见</strong><p>一套场次配置，连接内容、互动与商品。</p></div>
+  <form class="logout-form" th:action="@{/logout}" method="post"><button class="nav-item"><svg><use href="#i-logout"/></svg>退出管理后台</button></form>
+</aside>
+<div th:fragment="feedback">
+  <dialog id="app-dialog" class="app-dialog"><div class="dialog-heading"><h2 id="dialog-title"></h2><button class="icon-button dialog-close" aria-label="关闭弹窗">×</button></div><div id="dialog-content"></div></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</div>
+</body></html>

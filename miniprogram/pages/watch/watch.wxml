@@ -1,0 +1,40 @@
+<view wx:if="{{roomError}}" style="padding:48rpx;text-align:center;line-height:1.8">{{roomError}}</view>
+<view class="page watch-page" wx:if="{{room}}">
+  <view class="player">
+    <video wx:if="{{room.replayVideo}}" class="player-video" src="{{room.replayVideo}}" poster="{{room.cover}}" controls autoplay show-center-play-btn object-fit="cover" enable-progress-gesture></video>
+    <block wx:else>
+      <image class="player-cover" src="{{room.cover}}" mode="aspectFill"></image>
+      <view class="player-shade"></view>
+      <view class="player-head"><view class="channel-avatar">美</view><view class="channel-copy"><text class="channel-title">{{room.title}}</text><text class="channel-meta">{{room.likes}} 本场点赞</text></view><button class="more-button" data-name="更多互动" bindtap="showDemo">···</button></view>
+      <view class="player-label"><view class="live-dot"></view>{{room.status}} · 演示画面</view>
+      <button wx:if="{{room.status === '待开播'}}" class="play-button" bindtap="reserve">预约提醒</button><view wx:else class="play-button">▶</view>
+      <view class="player-caption">当前为演示素材，未接入真实直播流</view>
+    </block>
+    <view class="room-intro"><text class="intro-title">{{room.title}}</text><text class="intro-meta">{{room.host}} · {{room.mode}} · {{room.likes}} 人次</text></view>
+  </view>
+  <view class="notice"><text class="notice-badge">通知</text><text class="notice-text">{{room.announcement}}</text></view>
+  <view class="interaction-area">
+    <view class="topic-row"><text class="topic-pill">通知</text><text>{{room.announcement}}</text></view>
+    <view class="comments">
+      <view class="comment-row" wx:for="{{comments}}" wx:key="index"><text class="comment-name {{item.tone}}">{{item.name}}：</text><text>{{item.text}}</text></view>
+    </view>
+  </view>
+  <view class="action-bar">
+    <button class="comment-trigger" bindtap="openComment">聊一聊</button>
+    <button class="action-icon product-action" bindtap="toggleProducts">商品</button>
+    <button class="action-icon" data-view="coupon" bindtap="openFeature">领券</button>
+    <button class="action-icon" data-name="客服" bindtap="showDemo">客服</button>
+    <button class="action-icon" open-type="share">分享</button>
+    <button class="action-icon like-action {{liked ? 'is-liked' : ''}}" bindtap="toggleLike">♥<text>{{room.likes}}</text></button>
+  </view>
+
+  <view class="sheet-mask" wx:if="{{showProducts}}" bindtap="toggleProducts"></view>
+  <view class="product-sheet" wx:if="{{showProducts}}" catchtap="preventClose">
+    <view class="sheet-handle"></view><view class="sheet-title"><text>直播商品</text><text class="sheet-close" bindtap="toggleProducts">关闭</text></view>
+    <view class="sheet-demo">商品展示与下单目前为演示，不会扣款或发货。</view>
+    <view class="product-row" wx:for="{{products}}" wx:key="id"><image class="product-image" src="{{item.cover}}" mode="aspectFill"></image><view class="product-copy"><text class="product-name">{{item.name}}</text><text class="product-price">¥{{item.price}} <text class="old-price">¥{{item.original}}</text></text></view><button class="buy-button" data-id="{{item.id}}" bindtap="openProduct">查看</button></view>
+  </view>
+
+  <view class="comment-mask" wx:if="{{showCommentInput}}" bindtap="closeComment"></view>
+  <view class="comment-sheet" wx:if="{{showCommentInput}}" catchtap="preventClose"><input class="comment-input" maxlength="80" placeholder="说点什么…" value="{{commentText}}" bindinput="onCommentInput" focus="true"/><button class="send-button" bindtap="sendComment">发送</button></view>
+</view>
