@@ -9,6 +9,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import com.meiye.live.robot.RobotAutomationService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,14 +23,56 @@ public class InteractionService {
     private final RoomService rooms;
     private final MessageRepository messages;
     private final Clock clock;
-    public InteractionService(RoomService rooms, MessageRepository messages, Clock clock) { this.rooms = rooms; this.messages = messages; this.clock = clock; }
+    private final RobotAutomationService robots;
+    private final ConcurrentHashMap<String, Long> miniCommentTimes = new ConcurrentHashMap<>();
+    @Autowired
+    public InteractionService(RoomService rooms, MessageRepository messages, Clock clock, RobotAutomationService robots) {
+        this.rooms = rooms; this.messages = messages; this.clock = clock; this.robots = robots;
+    }
+    InteractionService(RoomService rooms, MessageRepository messages, Clock clock) { this(rooms, messages, clock, null); }
     @Transactional(readOnly = true) public List<MessageView> list(long roomId) {
+        List<MessageView> result = listInternal(roomId);
+        if (robots == null) return result;
+        List<String> authors = robots.publicNames(result.stream().map(MessageView::author).toList());
+        return java.util.stream.IntStream.range(0, result.size()).mapToObj(index -> {
+            MessageView message = result.get(index);
+            return new MessageView(message.id(), authors.get(index), message.content(), message.createdAt());
+        }).toList();
+    }
+    @Transactional(readOnly = true) public List<MessageView> listForAdmin(long roomId) {
+        return listInternal(roomId).stream().map(message -> message.author().matches("机器人·观众\\d+")
+            ? new MessageView(message.id(), message.author().replace("机器人·观众", "机器人·"), message.content(), message.createdAt())
+            : message).toList();
+    }
+    private List<MessageView> listInternal(long roomId) {
         rooms.require(roomId);
         List<MessageView> result = new ArrayList<>(messages.findTop80ByRoomIdOrderByIdDesc(roomId).stream().map(MessageView::of).toList());
         Collections.reverse(result); return result;
     }
     @Transactional public MessageView post(long roomId, MessageRequest request) {
         if (!rooms.require(roomId).isCommentsEnabled()) throw new ResponseStatusException(HttpStatus.CONFLICT, "本场评论已关闭");
+        return MessageView.of(messages.save(new ChatMessage(roomId, request.author().trim(), request.content().trim())));
+    }
+    @Transactional public long clear(long roomId) {
+        rooms.require(roomId);
+        return messages.deleteByRoomId(roomId);
+    }
+    @Transactional public MessageView postFromMiniProgram(long roomId, String viewerToken, String remoteAddress, MessageRequest request) {
+        if (!rooms.require(roomId).isCommentsEnabled()) throw new ResponseStatusException(HttpStatus.CONFLICT, "本场评论已关闭");
+        long now = clock.millis();
+        String key = remoteAddress + ":" + viewerToken;
+        AtomicBoolean allowed = new AtomicBoolean();
+        miniCommentTimes.compute(key, (ignored, last) -> {
+            if (last == null || now - last >= 3000) {
+                allowed.set(true);
+                return now;
+            }
+            return last;
+        });
+        if (!allowed.get()) {
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "评论发送太频繁，请稍后再试");
+        }
+        if (miniCommentTimes.size() > 5000) miniCommentTimes.entrySet().removeIf(entry -> now - entry.getValue() > 600_000);
         return MessageView.of(messages.save(new ChatMessage(roomId, request.author().trim(), request.content().trim())));
     }
     public Map<String, Object> checkIn(long roomId, HttpSession session) {

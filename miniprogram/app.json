@@ -6,6 +6,7 @@
     "pages/cart/cart",
     "pages/feature/feature",
     "pages/watch/watch",
+    "pages/watch-share/watch-share",
     "pages/mine/mine"
   ],
   "window": {

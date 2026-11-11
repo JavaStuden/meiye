@@ -11,7 +11,9 @@ public class RoomForm {
     @Size(max = 2000) private String description = "";
     @Size(max = 1000) private String announcement = "";
     @Size(max = 2048) private String streamUrl = "";
+    private Long mediaAssetId;
     @Size(max = 2048) private String posterUrl = "";
+    private Long posterAssetId;
     private String scheduledAt;
     @Min(1) @Max(86400) private int durationSeconds = 3600;
     private boolean commentsEnabled;
@@ -31,8 +33,12 @@ public class RoomForm {
     public void setAnnouncement(String announcement) { this.announcement = announcement; }
     public String getStreamUrl() { return streamUrl; }
     public void setStreamUrl(String streamUrl) { this.streamUrl = streamUrl; }
+    public Long getMediaAssetId() { return mediaAssetId; }
+    public void setMediaAssetId(Long mediaAssetId) { this.mediaAssetId = mediaAssetId; }
     public String getPosterUrl() { return posterUrl; }
     public void setPosterUrl(String posterUrl) { this.posterUrl = posterUrl; }
+    public Long getPosterAssetId() { return posterAssetId; }
+    public void setPosterAssetId(Long posterAssetId) { this.posterAssetId = posterAssetId; }
     public String getScheduledAt() { return scheduledAt; }
     public void setScheduledAt(String scheduledAt) { this.scheduledAt = scheduledAt; }
     public int getDurationSeconds() { return durationSeconds; }

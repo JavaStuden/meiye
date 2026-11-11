@@ -13,6 +13,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 
 @Configuration
 public class SecurityConfig {
@@ -30,9 +31,13 @@ public class SecurityConfig {
         return http.authorizeHttpRequests(auth -> auth
                 .requestMatchers("/admin", "/admin/**").hasRole("ADMIN")
                 .requestMatchers("/api/admin/**", "/meiye/api/admin/**").hasRole("ADMIN")
-                .requestMatchers(HttpMethod.GET, "/", "/meiye", "/meiye/", "/meiye/**", "/rooms/**", "/api/rooms/**", "/api/orders/**", "/assets/**", "/media/**", "/login", "/error", "/*.css", "/*.js", "/*.png", "/*.mp4", "/*.svg", "/index.html").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/miniprogram/rooms/*/messages", "/meiye/api/miniprogram/rooms/*/messages").permitAll()
+                .requestMatchers(HttpMethod.GET, "/", "/meiye", "/meiye/", "/meiye/**", "/rooms/**", "/share/**", "/api/rooms/**", "/api/orders/**", "/assets/**", "/media/**", "/login", "/error", "/*.css", "/*.js", "/*.png", "/*.mp4", "/*.svg", "/index.html").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/rooms/**").permitAll()
                 .anyRequest().authenticated())
+            .csrf(csrf -> csrf.ignoringRequestMatchers(
+                new AntPathRequestMatcher("/api/miniprogram/rooms/*/messages", "POST"),
+                new AntPathRequestMatcher("/meiye/api/miniprogram/rooms/*/messages", "POST")))
             .formLogin(form -> form.loginPage("/login").defaultSuccessUrl("/admin", true).permitAll())
             .logout(logout -> logout.logoutSuccessUrl("/login?logout"))
             .headers(headers -> headers.contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https: http: data: blob:; media-src 'self' https: http: blob: data:; connect-src 'self' https: http:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'")))

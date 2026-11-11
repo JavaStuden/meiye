@@ -18,8 +18,10 @@ import com.meiye.live.room.Room;
 import com.meiye.live.room.RoomMode;
 import com.meiye.live.room.RoomRepository;
 import com.meiye.live.room.RoomStatus;
+import com.meiye.live.robot.RobotAutomationService;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.Instant;
 import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -37,6 +39,9 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 
 /** Exercises real service transactions against an isolated H2 database, without a test transaction. */
 @SpringBootTest(properties = {
@@ -53,6 +58,7 @@ class BackendAcceptanceTest {
     @Autowired ProductRepository products;
     @Autowired OrderRepository orders;
     @Autowired RoomRepository rooms;
+    @Autowired RobotAutomationService robots;
 
     @ParameterizedTest
     @ValueSource(strings = {"/admin", "/admin/rooms/new", "/admin/rooms/1/edit", "/admin/products", "/admin/orders"})
@@ -68,13 +74,60 @@ class BackendAcceptanceTest {
             .andExpect(status().isServiceUnavailable());
     }
 
+    @Test
+    void adminCsrfEndpointProvidesTokenForTheStaticOperationsConsole() throws Exception {
+        mvc.perform(get("/api/admin/csrf").with(user("admin").roles("ADMIN")))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.token").isNotEmpty())
+            .andExpect(jsonPath("$.headerName").isNotEmpty());
+    }
+
+    @Test
+    void adminRobotTasksPersistAndWriteCommentsIntoTheRoomMessageTable() throws Exception {
+        mvc.perform(get("/api/admin/robots").with(user("admin").roles("ADMIN")))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.tasks").isArray());
+        mvc.perform(get("/api/admin/robots")).andExpect(status().is3xxRedirection());
+        mvc.perform(put("/api/admin/robots/names").with(user("admin").roles("ADMIN")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(Map.of("names", java.util.List.of("广州美业学员", "悦颜护理店")))))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.robotNames[0]").value("广州美业学员"));
+        var body = Map.of("roomId", 1, "templateId", 101, "startsAt", "2026-10-18T00:00:00Z");
+        mvc.perform(post("/api/admin/robots/tasks").with(user("admin").roles("ADMIN")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(body)))
+            .andExpect(status().isCreated()).andExpect(jsonPath("$.tasks[0].roomId").value(1));
+        robots.tick();
+        JsonNode messages = json.readTree(mvc.perform(get("/api/rooms/1/messages")).andReturn().getResponse().getContentAsString());
+        assertThat(messages.get(messages.size() - 1).get("author").asText()).isIn("广州美业学员", "悦颜护理店");
+        assertThat(mvc.perform(get("/api/admin/rooms/1/messages")).andReturn().getResponse().getStatus()).isEqualTo(302);
+        JsonNode adminMessages = json.readTree(mvc.perform(get("/api/admin/rooms/1/messages").with(user("admin").roles("ADMIN")))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        assertThat(adminMessages.get(adminMessages.size() - 1).get("author").asText()).startsWith("机器人·");
+        var taskId = robots.state().tasks.get(0).id;
+        mvc.perform(patch("/api/admin/robots/tasks/{id}", taskId).with(user("admin").roles("ADMIN")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"active\":false}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.tasks[0].active").value(false));
+        mvc.perform(delete("/api/admin/robots/tasks/{id}", taskId).with(user("admin").roles("ADMIN")).with(csrf()))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.tasks").isEmpty());
+    }
+
+    @Test
+    void miniProgramCanPostCommentsWithoutWebCsrfAndIsRateLimited() throws Exception {
+        var body = Map.of("author", "小程序观众", "content", "小程序评论联调");
+        var request = post("/api/miniprogram/rooms/1/messages")
+            .header("X-Viewer-Token", "viewer_test_token_0001")
+            .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(body));
+        mvc.perform(request).andExpect(status().isCreated()).andExpect(jsonPath("$.content").value("小程序评论联调"));
+        mvc.perform(post("/api/miniprogram/rooms/1/messages")
+                .header("X-Viewer-Token", "viewer_test_token_0001")
+                .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(body)))
+            .andExpect(status().isTooManyRequests());
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"/api/admin/share/rooms/1", "/meiye/api/admin/share/rooms/1"})
     void shareCodesRequireAdminAndMissingWechatSecretIsExplicit(String path) throws Exception {
         mvc.perform(get(path)).andExpect(status().is3xxRedirection());
         mvc.perform(get(path).with(user("viewer").roles("VIEWER"))).andExpect(status().isForbidden());
         mvc.perform(get(path).with(user("admin").roles("ADMIN"))).andExpect(status().isOk())
-            .andExpect(jsonPath("$.path").value("pages/watch/watch?id=1"));
+            .andExpect(jsonPath("$.path").value("pages/watch-share/watch-share?id=1"));
         mvc.perform(get(path + "/miniprogram-code").with(user("admin").roles("ADMIN")))
             .andExpect(status().isServiceUnavailable()).andExpect(jsonPath("$.message").value(containsString("WECHAT_APP_SECRET")));
         mvc.perform(get(path + "/h5-code").with(user("admin").roles("ADMIN")))

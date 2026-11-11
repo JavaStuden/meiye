@@ -1,6 +1,7 @@
 App({
   globalData: {
-    apiBase: '',
-    demoMode: true
+    apiBase: 'https://voice.yourunshi.online/meiye',
+    demoMode: true,
+    backendReadOnly: false
   }
 });

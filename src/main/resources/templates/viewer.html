@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title th:text="${surface == 'pc' ? '美业直播工具 · 直播工作台 V2.2.9' : (room != null ? room.title + ' · 美业直播' : '美业直播工具 · 直播间体验整改版 V2.2.9')}">美业直播工具 · 直播间体验整改版 V2.2.9</title>
-  <link rel="stylesheet" th:href="@{/style.css(v='20261013-032957')}" href="/style.css?v=20261013-032957">
-  <link rel="stylesheet" th:href="@{/flows.css(v='20261013-032957')}" href="/flows.css?v=20261013-032957">
-  <link rel="stylesheet" th:href="@{/live-room.css(v='20261013-032957')}" href="/live-room.css?v=20261013-032957">
-  <link rel="stylesheet" th:href="@{/feed-playback.css(v='20261013-032957')}" href="/feed-playback.css?v=20261013-032957">
-  <link rel="stylesheet" th:href="@{/live-operations.css(v='20261028-v2')}" href="/live-operations.css?v=20261028-v2">
+  <title th:text="${surface == 'pc' ? '直播间列表 - 旗慧美业' : (room != null ? room.title + ' · 美业直播' : '直播间列表 - 旗慧美业')}">直播间列表 - 旗慧美业</title>
+  <link rel="stylesheet" th:href="@{/style.css(v='20261108-room-selector-contrast-v1')}" href="/style.css?v=20261108-room-selector-contrast-v1">
+  <link rel="stylesheet" th:href="@{/flows.css(v='20261102-qihui-v3')}" href="/flows.css?v=20261102-qihui-v3">
+  <link rel="stylesheet" th:href="@{/live-room.css(v='20261102-qihui-v3')}" href="/live-room.css?v=20261102-qihui-v3">
+  <link rel="stylesheet" th:href="@{/feed-playback.css(v='20261102-qihui-v3')}" href="/feed-playback.css?v=20261102-qihui-v3">
+  <link rel="stylesheet" th:href="@{/live-operations.css(v='20261108-real-playback-v1')}" href="/live-operations.css?v=20261108-real-playback-v1">
   <meta name="_csrf" th:if="${_csrf != null}" th:content="${_csrf.token}">
   <meta name="_csrf_header" th:if="${_csrf != null}" th:content="${_csrf.headerName}">
 </head>
@@ -27,10 +27,10 @@
   <dialog id="dialog"></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
   <div style="display:none" th:if="${room != null}" th:attr="data-room-id=${room.id},data-room-mode=${room.mode}"></div>
-  <script th:src="@{/app.js(v='20261013-032957')}" src="/app.js?v=20261013-032957"></script>
-  <script th:src="@{/flows.js(v='20261027-5')}" src="/flows.js?v=20261027-5"></script>
-  <script th:src="@{/live-room.js(v='20261027-5')}" src="/live-room.js?v=20261027-5"></script>
-  <script th:src="@{/live-operations.js(v='20261102-real-share-v1')}" src="/live-operations.js?v=20261102-real-share-v1"></script>
+  <script th:src="@{/app.js(v='20261108-cos-playback-v2')}" src="/app.js?v=20261108-cos-playback-v2"></script>
+  <script th:src="@{/flows.js(v='20261108-comments-robots-v2')}" src="/flows.js?v=20261108-comments-robots-v2"></script>
+  <script th:src="@{/live-room.js(v='20261102-qihui-v3')}" src="/live-room.js?v=20261102-qihui-v3"></script>
+  <script th:src="@{/live-operations.js(v='20261109-admin-login-v1')}" src="/live-operations.js?v=20261109-admin-login-v1"></script>
   <script th:inline="javascript">
     /*<![CDATA[*/
     if (typeof window !== 'undefined' && typeof db !== 'undefined') {
@@ -48,7 +48,7 @@
         surface = 'capture';
       } else if (view === 'pc') {
         surface = 'pc';
-        page = 'overview';
+        page = route.get('page') || 'live';
       }
       if (typeof render === 'function') render();
     }

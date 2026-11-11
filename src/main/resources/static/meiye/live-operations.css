@@ -413,6 +413,27 @@ body.lcc-dark-mode .live-control-center {
   background: #000;
 }
 
+.lcc-video-box .lcc-no-video {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: #e2e8f0;
+  background: #111827;
+  text-align: center;
+}
+
+.server-playback-pending {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: #fff;
+  background: #111827;
+  text-align: center;
+  font-size: 13px;
+}
+
 .lcc-video-tag {
   position: absolute;
   bottom: 8px;
@@ -2138,130 +2159,391 @@ dialog::backdrop {
   pointer-events: none;
 }
 
+
 /* ==========================================================================
-   2. 图二与图四专用：高保真「直播设置」弹窗 (Live Settings Modal)
+   2. 旗慧美业高保真：编辑直播间 & 直播设置弹窗 (对齐参考图 5)
    ========================================================================== */
-.live-settings-dialog {
-  padding: 4px;
+
+dialog.qihui-dialog {
+  max-width: 780px !important;
+  width: 94% !important;
+  max-height: 90vh !important;
+  padding: 0 !important;
+  border-radius: 10px !important;
+  background: #ffffff !important;
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.22) !important;
+  overflow: hidden !important;
 }
 
-.live-settings-subhead {
+.qihui-dialog-head {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  color: #64748b;
-  font-size: 13px;
-  margin-top: -8px;
-  margin-bottom: 18px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #f1f5f9;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid #f0f2f5;
+  background: #ffffff;
 }
 
-.live-settings-expand-btn {
-  border: 0;
-  background: none;
-  color: #94a3b8;
-  padding: 4px;
-  cursor: pointer;
-  border-radius: 4px;
+.qihui-dialog-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #1f2329;
 }
 
-.live-settings-expand-btn:hover {
-  background: #f1f5f9;
-  color: #334155;
+.qihui-dialog-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.live-settings-switches-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
+.qihui-dialog-icon-btn {
+  width: 28px !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: #8c959f !important;
+  border-radius: 4px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 18px !important;
+  cursor: pointer !important;
+  transition: all 0.15s;
+}
+
+.qihui-dialog-icon-btn:hover {
+  background: #f2f4f7 !important;
+  color: #1f2329 !important;
+}
+
+.qihui-edit-room-form {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(90vh - 58px);
+}
+
+.qihui-modal-body {
+  padding: 18px 26px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.qihui-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 26px;
+  border-top: 1px solid #f0f2f5;
+  background: #ffffff;
+}
+
+.qihui-btn-cancel {
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 18px !important;
+  border-radius: 4px !important;
+  border: 1px solid #dcdfe6 !important;
+  background: #ffffff !important;
+  color: #606266 !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  cursor: pointer !important;
+}
+
+.qihui-btn-cancel:hover {
+  color: #1677ff !important;
+  border-color: #c6e2ff !important;
+  background: #ecf5ff !important;
+}
+
+.qihui-btn-submit {
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 20px !important;
+  border-radius: 4px !important;
+  border: 0 !important;
+  background: #1677ff !important;
+  color: #ffffff !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+}
+
+.qihui-btn-submit:hover {
+  background: #4096ff !important;
+}
+
+.qihui-btn-plain {
+  height: 30px !important;
+  min-height: 30px !important;
+  padding: 0 12px !important;
+  border-radius: 4px !important;
+  border: 1px solid #dcdfe6 !important;
+  background: #ffffff !important;
+  color: #475569 !important;
+  font-size: 12px !important;
+}
+
+/* 观看时长奖励卡片 (参考图 5 顶部区域) */
+.qihui-reward-card {
+  background: #fafbfc;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  padding: 14px 18px;
+  margin-bottom: 20px;
+}
+
+.qihui-reward-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.qihui-reward-head b {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1f2329;
+}
+
+.qihui-reward-desc {
+  margin: 0;
+  font-size: 12px;
+  color: #8c959f;
+  line-height: 1.6;
+}
+
+/* 竖条标题分组 (| 基本信息 / | 直播设置 / | 功能开关) */
+.qihui-modal-section {
+  margin-bottom: 22px;
+}
+
+.qihui-modal-section:last-child {
+  margin-bottom: 4px;
+}
+
+.qihui-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-bottom: 16px;
 }
 
-.live-setting-item {
-  height: 54px;
-  border-radius: 10px;
-  background: #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 18px;
-  border: 1.5px solid #e2e8f0;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+.qihui-section-bar {
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: #1677ff;
+  flex-shrink: 0;
 }
 
-.live-setting-item:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-}
-
-.live-setting-item.blue   { border-color: #3b82f6; }
-.live-setting-item.pink   { border-color: #ec4899; }
-.live-setting-item.purple { border-color: #8b5cf6; }
-.live-setting-item.cyan   { border-color: #06b6d4; }
-.live-setting-item.dark   { border-color: #475569; }
-.live-setting-item.orange { border-color: #f97316; }
-.live-setting-item.green  { border-color: #10b981; }
-
-.live-setting-item.blue.active   { background: #eff6ff; border-color: #2563eb; }
-.live-setting-item.pink.active   { background: #fdf2f8; border-color: #ec4899; }
-.live-setting-item.purple.active { background: #f5f3ff; border-color: #8b5cf6; }
-.live-setting-item.cyan.active   { background: #ecfeff; border-color: #06b6d4; }
-.live-setting-item.dark.active   { background: #f8fafc; border-color: #334155; }
-.live-setting-item.orange.active { background: #fff7ed; border-color: #ea580c; }
-.live-setting-item.green.active  { background: #f0fdf4; border-color: #059669; }
-
-.live-setting-item .setting-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1e293b;
-}
-
-/* 底部全宽奖励卡片 */
-.live-setting-reward-box {
-  background: #ffffff;
-  border: 1.5px solid #64748b;
-  border-radius: 10px;
-  padding: 16px 18px;
-  margin-top: 14px;
-  transition: all 0.2s ease;
-}
-
-.live-setting-reward-box.active {
-  border-color: #2563eb;
-  background: #f8fafc;
-}
-
-.reward-box-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.reward-box-header b {
+.qihui-section-header h4 {
+  margin: 0;
   font-size: 14px;
   font-weight: 700;
-  color: #0f172a;
+  color: #1f2329;
 }
 
-.reward-box-desc {
-  font-size: 12px;
-  color: #64748b;
-  line-height: 1.6;
-  margin: 8px 0 0 0;
+/* 水平表单行 (Label 右对齐 + 右侧控件) */
+.qihui-form-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-left: 12px;
 }
 
-/* iOS 拟真开关 (开/关) */
-.ios-switch {
-  position: relative;
+.qihui-form-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.qihui-form-row.align-top {
+  align-items: flex-start;
+}
+
+.qihui-form-row.align-top .qihui-row-label {
+  padding-top: 7px;
+}
+
+.qihui-row-label {
+  width: 76px;
+  text-align: right;
+  font-size: 13px;
+  color: #606266;
+  flex-shrink: 0;
+}
+
+.qihui-row-control {
+  flex: 1;
+  min-width: 0;
+}
+
+.qihui-row-control input[type="text"],
+.qihui-row-control input[type="datetime-local"],
+.qihui-row-control input:not([type]),
+.qihui-row-control select {
+  height: 34px !important;
+  min-height: 34px !important;
+  padding: 0 11px !important;
+  border: 1px solid #dcdfe6 !important;
+  border-radius: 4px !important;
+  font-size: 13px !important;
+  color: #303133 !important;
+  background: #ffffff !important;
+  width: 100%;
+}
+
+.qihui-row-control textarea {
+  padding: 8px 11px !important;
+  border: 1px solid #dcdfe6 !important;
+  border-radius: 4px !important;
+  font-size: 13px !important;
+  color: #303133 !important;
+  line-height: 1.55 !important;
+  background: #ffffff !important;
+  width: 100%;
+}
+
+.qihui-row-control input:focus,
+.qihui-row-control select:focus,
+.qihui-row-control textarea:focus {
+  outline: none !important;
+  border-color: #1677ff !important;
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.12) !important;
+}
+
+/* 火力值步进器 ([-][ 0 ][+]) */
+.qihui-stepper {
   display: inline-flex;
   align-items: center;
-  width: 52px;
-  height: 28px;
-  cursor: pointer;
-  user-select: none;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  overflow: hidden;
+  height: 32px;
+  background: #ffffff;
 }
 
+.qihui-stepper-btn {
+  width: 32px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: #f5f7fa !important;
+  color: #606266 !important;
+  font-size: 15px !important;
+  display: grid !important;
+  place-items: center !important;
+  cursor: pointer !important;
+  border-radius: 0 !important;
+}
+
+.qihui-stepper-btn:hover {
+  background: #ecf5ff !important;
+  color: #1677ff !important;
+}
+
+.qihui-stepper input[type="number"] {
+  width: 78px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  border: 0 !important;
+  border-left: 1px solid #dcdfe6 !important;
+  border-right: 1px solid #dcdfe6 !important;
+  border-radius: 0 !important;
+  text-align: center !important;
+  font-size: 13px !important;
+  color: #303133 !important;
+  padding: 0 4px !important;
+  -moz-appearance: textfield;
+}
+
+.qihui-stepper input[type="number"]::-webkit-outer-spin-button,
+.qihui-stepper input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* 功能开关 4×2 网格 (对齐参考图 5 红框部分：无花哨外框、清爽对齐) */
+.qihui-func-switches-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px 24px;
+  padding: 4px 12px 10px 24px;
+}
+
+.qihui-func-switch-cell {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.qihui-func-switch-label {
+  font-size: 13px;
+  color: #303133;
+  min-width: 54px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.qihui-func-hint {
+  margin: 6px 0 0 24px;
+  font-size: 12px;
+  color: #909399;
+}
+
+.qihui-replay-switches-row {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  padding: 10px 14px;
+  background: #f8fafc;
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.qihui-inline-switch-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #303133;
+}
+
+/* 标准精致 Switch 组件 (.qihui-switch) —— 彻底隔离全局 .small 污染 */
+.qihui-switch,
+.ios-switch {
+  position: relative !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  width: 40px !important;
+  height: 20px !important;
+  min-height: 20px !important;
+  max-height: 20px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  cursor: pointer !important;
+  user-select: none !important;
+  vertical-align: middle !important;
+  flex-shrink: 0 !important;
+}
+
+.qihui-switch.with-text {
+  width: 46px !important;
+  height: 22px !important;
+  min-height: 22px !important;
+  max-height: 22px !important;
+}
+
+.qihui-switch input,
 .ios-switch input {
   opacity: 0 !important;
   width: 0 !important;
@@ -2271,292 +2553,298 @@ dialog::backdrop {
   margin: 0 !important;
   padding: 0 !important;
   position: absolute !important;
+  pointer-events: none !important;
 }
 
+.qihui-switch .qihui-slider,
 .ios-switch .slider {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: #bfbfbf;
-  border-radius: 28px;
-  transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  position: absolute !important;
+  inset: 0 !important;
+  background-color: #dcdfe6 !important;
+  border-radius: 999px !important;
+  transition: background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
+.qihui-switch .qihui-slider::before,
 .ios-switch .slider::before {
-  position: absolute;
-  content: "";
-  height: 22px;
-  width: 22px;
-  left: 3px;
-  bottom: 3px;
-  background-color: #ffffff;
-  border-radius: 50%;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-  transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  content: "" !important;
+  position: absolute !important;
+  width: 16px !important;
+  height: 16px !important;
+  left: 2px !important;
+  top: 2px !important;
+  bottom: auto !important;
+  background-color: #ffffff !important;
+  border-radius: 50% !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22) !important;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
+.qihui-switch.with-text .qihui-slider::before {
+  width: 18px !important;
+  height: 18px !important;
+}
+
+.qihui-switch input:checked + .qihui-slider,
 .ios-switch input:checked + .slider {
-  background-color: #1677ff;
+  background-color: #1677ff !important;
 }
 
+.qihui-switch input:checked + .qihui-slider::before,
 .ios-switch input:checked + .slider::before {
-  transform: translateX(24px);
+  transform: translateX(20px) !important;
 }
 
-.ios-switch .switch-state-text {
+.qihui-switch.with-text input:checked + .qihui-slider::before {
+  transform: translateX(24px) !important;
+}
+
+.qihui-switch .qihui-switch-text {
   position: relative;
   z-index: 2;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 500;
   color: #ffffff;
-  margin-left: 28px;
-  transition: all 0.2s;
+  margin-left: 24px;
+  line-height: 1;
   pointer-events: none;
 }
 
-.ios-switch input:checked ~ .switch-state-text {
-  margin-left: 10px;
-}
-
-.ios-switch.small {
-  width: 44px;
-  height: 22px;
-}
-
-.ios-switch.small .slider {
-  background-color: #bfbfbf;
-  border-radius: 100px;
-}
-
-.ios-switch.small .slider::before {
-  height: 18px;
-  width: 18px;
-  left: 2px;
-  bottom: 2px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-}
-
-.ios-switch.small input:checked + .slider {
-  background-color: #1677ff;
-}
-
-.ios-switch.small input:checked + .slider::before {
-  transform: translateX(22px);
-}
-
-/* 弹窗底部操作区 */
-.live-settings-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 20px;
-  padding-top: 14px;
-  border-top: 1px solid #f1f5f9;
-}
-
-.live-settings-cancel {
-  padding: 8px 18px;
-  border: 1px solid #cbd5e1;
-  background: #ffffff;
-  color: #334155;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.live-settings-cancel:hover {
-  background: #f8fafc;
-  border-color: #94a3b8;
-}
-
-.live-settings-save {
-  padding: 8px 24px;
-  border: 0;
-  background: #2563eb;
-  color: #ffffff;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.25);
-  transition: all 0.15s;
-}
-
-.live-settings-save:hover {
-  background: #1d4ed8;
+.qihui-switch input:checked ~ .qihui-switch-text {
+  margin-left: 7px;
 }
 
 /* ==========================================================================
-   3. 图三高保真：旗慧美业企业级工作台与直播管理列表
+   3. 旗慧美业企业级工作台与「直播间列表」(1:1 对齐参考图 3)
    ========================================================================== */
 
-/* 顶部企业导航栏 (Image 3) */
+/* 顶部企业导航栏 */
 .qihui-header-bar {
-  height: 56px;
+  height: 54px;
   background: #ffffff;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid #ebeef5;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
+  padding: 0 18px;
   position: sticky;
   top: 0;
   z-index: 30;
+  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.03);
+}
+
+.qihui-header-left {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
 }
 
 .qihui-brand-group {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
 .qihui-brand-logo {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   font-size: 16px;
   font-weight: 700;
-  color: #0f172a;
+  color: #1f2329;
+  letter-spacing: 0.2px;
 }
 
 .qihui-logo-icon {
-  width: 28px;
-  height: 28px;
-  background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);
-  border-radius: 6px;
+  width: 30px;
+  height: 30px;
+  background: linear-gradient(135deg, #1677ff 0%, #0958d9 100%);
+  border-radius: 7px;
   display: grid;
   place-items: center;
   color: #ffffff;
-  font-size: 16px;
-  font-weight: 900;
+  box-shadow: 0 2px 6px rgba(22, 119, 255, 0.28);
 }
 
 .qihui-refresh-btn {
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  border: 0;
-  background: none;
-  color: #64748b;
-  border-radius: 4px;
-  cursor: pointer;
+  width: 28px !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  padding: 0 !important;
+  display: grid !important;
+  place-items: center !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: #606266 !important;
+  border-radius: 4px !important;
+  cursor: pointer !important;
 }
 
 .qihui-refresh-btn:hover {
-  background: #f1f5f9;
-  color: #0f172a;
+  background: #f2f4f7 !important;
+  color: #1677ff !important;
 }
 
 .qihui-nav-tabs {
   display: flex;
   align-items: center;
   gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.qihui-nav-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .qihui-nav-tab {
-  height: 34px;
-  padding: 0 14px;
-  font-size: 13px;
-  font-weight: 500;
-  color: #475569;
-  border: 0;
-  background: none;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.15s;
+  height: 34px !important;
+  min-height: 34px !important;
+  padding: 0 13px !important;
+  font-size: 13.5px !important;
+  font-weight: 500 !important;
+  color: #303133 !important;
+  border: 0 !important;
+  background: transparent !important;
+  border-radius: 6px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+  transition: all 0.15s ease !important;
+}
+
+.qihui-nav-tab svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  opacity: 0.85;
 }
 
 .qihui-nav-tab:hover {
-  color: #2563eb;
-  background: #f8fafc;
+  color: #1677ff !important;
+  background: #f5f8ff !important;
 }
 
 .qihui-nav-tab.active {
-  color: #2563eb;
-  font-weight: 700;
-  background: #eff6ff;
+  color: #1677ff !important;
+  font-weight: 600 !important;
+  background: #e8f3ff !important;
+}
+
+.qihui-nav-tab.active svg {
+  opacity: 1;
 }
 
 .qihui-surface-switcher {
-  display: flex;
-  background: #f1f5f9;
-  padding: 3px;
+  display: inline-flex;
+  background: #f2f4f7;
+  padding: 2px;
   border-radius: 6px;
   gap: 2px;
-  margin-left: 12px;
+  margin-right: 4px;
 }
 
 .qihui-surface-btn {
-  border: 0;
-  background: none;
-  font-size: 11px;
-  padding: 4px 10px;
-  border-radius: 4px;
-  color: #64748b;
-  cursor: pointer;
+  border: 0 !important;
+  background: transparent !important;
+  font-size: 11px !important;
+  height: 24px !important;
+  min-height: 24px !important;
+  padding: 0 9px !important;
+  border-radius: 4px !important;
+  color: #606266 !important;
+  cursor: pointer !important;
 }
 
 .qihui-surface-btn.active {
-  background: #ffffff;
-  color: #2563eb;
-  font-weight: 700;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  background: #ffffff !important;
+  color: #1677ff !important;
+  font-weight: 600 !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 .qihui-header-tools {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .qihui-tool-icon {
-  width: 32px;
-  height: 32px;
-  border: 0;
-  background: none;
-  color: #64748b;
-  display: grid;
-  place-items: center;
-  border-radius: 6px;
-  cursor: pointer;
+  width: 30px !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: #4e5969 !important;
+  display: grid !important;
+  place-items: center !important;
+  border-radius: 6px !important;
+  cursor: pointer !important;
 }
 
 .qihui-tool-icon:hover {
-  background: #f1f5f9;
-  color: #0f172a;
+  background: #f2f4f7 !important;
+  color: #1677ff !important;
 }
 
 .qihui-user-badge {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  background: #f1f5f9;
-  color: #475569;
+  width: 30px;
+  height: 30px;
+  background: #e5e9f2;
+  color: #303133;
   border-radius: 50%;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 700;
-  border: 1px solid #e2e8f0;
+  margin-left: 2px;
 }
 
-/* 企业左侧功能菜单 (Image 3) */
+.qihui-user-online-dot {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #52c41a;
+  border: 1.5px solid #ffffff;
+}
+
+/* 企业左侧功能菜单 + 主内容区 */
 .qihui-workbench-layout {
   display: grid;
-  grid-template-columns: 180px 1fr;
-  min-height: calc(100vh - 56px);
-  background: #f4f6f9;
+  grid-template-columns: 172px 1fr;
+  min-height: calc(100vh - 54px);
+  background: #f2f3f5;
+  transition: grid-template-columns 0.2s ease;
+}
+
+.qihui-workbench-layout.sidebar-collapsed {
+  grid-template-columns: 56px 1fr;
+}
+
+.qihui-workbench-layout.sidebar-collapsed .qihui-sidebar-item span {
+  display: none;
+}
+
+.qihui-workbench-layout.sidebar-collapsed .qihui-sidebar-item {
+  justify-content: center;
+  padding: 0;
 }
 
 .qihui-sidebar {
   background: #ffffff;
-  border-right: 1px solid #e2e8f0;
-  padding: 14px 10px;
+  border-right: 1px solid #ebeef5;
+  padding: 10px 8px 8px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -2565,203 +2853,234 @@ dialog::backdrop {
 .qihui-sidebar-nav {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .qihui-sidebar-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 38px;
-  padding: 0 14px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  color: #475569;
-  border: 0;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-  transition: all 0.15s;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  height: 38px !important;
+  min-height: 38px !important;
+  padding: 0 14px !important;
+  border-radius: 6px !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  color: #303133 !important;
+  border: 0 !important;
+  background: transparent !important;
+  text-align: left !important;
+  cursor: pointer !important;
+  transition: all 0.15s !important;
 }
 
 .qihui-sidebar-item:hover {
-  background: #f8fafc;
-  color: #2563eb;
+  background: #f5f7fa !important;
+  color: #1677ff !important;
 }
 
 .qihui-sidebar-item.active {
-  background: #eff6ff;
-  color: #2563eb;
-  font-weight: 700;
+  background: #e8f3ff !important;
+  color: #1677ff !important;
+  font-weight: 600 !important;
 }
 
 .qihui-sidebar-item svg {
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
   flex-shrink: 0;
 }
 
 .qihui-sidebar-footer {
-  padding-top: 12px;
-  border-top: 1px solid #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 6px 2px;
+  border-top: 1px solid #f2f3f5;
 }
 
+.qihui-collapse-btn,
 .qihui-pin-btn {
-  border: 0;
-  background: none;
-  color: #94a3b8;
-  cursor: pointer;
-  padding: 6px;
+  width: 26px !important;
+  height: 26px !important;
+  min-height: 26px !important;
+  padding: 0 !important;
+  border: 1px solid #ebeef5 !important;
+  background: #fafbfc !important;
+  color: #909399 !important;
+  border-radius: 4px !important;
+  display: grid !important;
+  place-items: center !important;
+  cursor: pointer !important;
 }
 
-/* 主工作区 (Image 3) */
+.qihui-collapse-btn:hover,
+.qihui-pin-btn:hover {
+  color: #1677ff !important;
+  border-color: #c6e2ff !important;
+  background: #ecf5ff !important;
+}
+
+/* 主内容区 */
 .qihui-main-content {
-  padding: 16px 22px;
+  padding: 12px 14px 20px;
   min-width: 0;
 }
 
-/* 顶部合规提示栏 */
+.qihui-live-page {
+  background: #ffffff;
+  border-radius: 8px;
+  border: 1px solid #ebeef5;
+  padding: 14px 16px 18px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+/* 顶部合规提示条 (参考图 3：浅灰底条 + 实心信息圆标) */
 .qihui-compliance-bar {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: #ffffff;
-  padding: 10px 18px;
+  background: #f5f7fa;
+  padding: 9px 14px;
   border-radius: 6px;
-  border: 1px solid #e2e8f0;
-  font-size: 12px;
-  color: #64748b;
+  font-size: 12.5px;
+  color: #606266;
   margin-bottom: 14px;
 }
 
 .qihui-compliance-bar svg {
-  color: #64748b;
   flex-shrink: 0;
 }
 
-/* 筛选搜索卡片 */
+/* 筛选搜索栏 (参考图 3：单行水平同行 Label + Input + 右侧重置/查询) */
 .qihui-filter-card {
   background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 16px 20px;
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+  padding: 14px 18px;
   margin-bottom: 14px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 .qihui-filter-row {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 16px;
+  align-items: center;
+  gap: 14px 22px;
 }
 
 .qihui-filter-item {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  flex: 1;
-  min-width: 160px;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 210px;
+  min-width: 195px;
 }
 
 .qihui-filter-item label {
-  font-size: 12px;
-  font-weight: 600;
-  color: #1e293b;
+  font-size: 13px;
+  font-weight: 500;
+  color: #303133;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .qihui-filter-item input,
 .qihui-filter-item select {
-  height: 34px;
-  border: 1px solid #d1d5db;
-  border-radius: 4px;
-  padding: 0 10px;
-  font-size: 12px;
-  color: #1e293b;
-  background: #ffffff;
-  outline: none;
+  height: 32px !important;
+  min-height: 32px !important;
+  border: 1px solid #dcdfe6 !important;
+  border-radius: 4px !important;
+  padding: 0 11px !important;
+  font-size: 12.5px !important;
+  color: #303133 !important;
+  background: #ffffff !important;
+  outline: none !important;
+  flex: 1;
+  min-width: 120px;
+}
+
+.qihui-filter-item input::placeholder {
+  color: #a8abb2;
+}
+
+.qihui-filter-item select {
+  color: #606266 !important;
 }
 
 .qihui-filter-item input:focus,
 .qihui-filter-item select:focus {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+  border-color: #1677ff !important;
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.1) !important;
 }
 
 .qihui-filter-actions {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
   margin-left: auto;
 }
 
 .qihui-btn {
-  height: 32px;
-  line-height: 32px;
-  padding: 0 16px;
-  border-radius: 4px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  border: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s ease;
+  height: 32px !important;
+  min-height: 32px !important;
+  line-height: 32px !important;
+  padding: 0 18px !important;
+  border-radius: 4px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  border: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: all 0.15s ease !important;
 }
 
 .qihui-btn.reset {
-  background: #8c9ba5 !important;
+  background: #909399 !important;
   color: #ffffff !important;
-  border: 0 !important;
 }
 
 .qihui-btn.reset:hover {
-  background: #7a8892 !important;
+  background: #a6a9ad !important;
 }
 
 .qihui-btn.search {
   background: #1677ff !important;
-  border: 0 !important;
   color: #ffffff !important;
-  font-weight: 500;
-  padding: 0 16px;
 }
 
 .qihui-btn.search:hover {
   background: #4096ff !important;
 }
 
-/* 直播间列表表格卡片 */
+/* 表格卡片与操作栏 */
 .qihui-table-card {
   background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 18px 20px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 .qihui-table-topbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .qihui-btn.create-live {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 14px;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 14px !important;
   background: #1677ff !important;
   color: #ffffff !important;
   border: 0 !important;
-  border-radius: 4px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s ease;
+  border-radius: 4px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
 }
 
 .qihui-btn.create-live:hover {
@@ -2769,98 +3088,153 @@ dialog::backdrop {
 }
 
 .qihui-icon-btn.refresh {
-  width: 30px;
-  height: 30px;
-  border: 1px solid #e2e8f0;
-  background: #ffffff;
-  border-radius: 4px;
-  display: grid;
-  place-items: center;
-  color: #64748b;
-  cursor: pointer;
+  width: 30px !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  padding: 0 !important;
+  border: 1px solid #dcdfe6 !important;
+  background: #ffffff !important;
+  border-radius: 50% !important;
+  display: grid !important;
+  place-items: center !important;
+  color: #606266 !important;
+  cursor: pointer !important;
 }
 
 .qihui-icon-btn.refresh:hover {
-  background: #f8fafc;
-  color: #0f172a;
+  border-color: #1677ff !important;
+  color: #1677ff !important;
+  background: #ecf5ff !important;
 }
 
-/* 表格主体 */
+/* 企业级表格主体 (对齐参考图 3：表头竖向分割线、居中对齐、精致行高) */
 .qihui-table-wrap {
   overflow-x: auto;
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
 }
 
 .qihui-enterprise-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 12.5px;
 }
 
 .qihui-enterprise-table thead th {
-  background: #f8fafc;
-  color: #475569;
+  position: relative;
+  background: #f7f8fa;
+  color: #606266;
   font-weight: 600;
-  padding: 12px 10px;
-  border-bottom: 1px solid #e2e8f0;
-  text-align: left;
+  padding: 11px 10px;
+  border-bottom: 1px solid #ebeef5;
+  text-align: center;
   white-space: nowrap;
+}
+
+.qihui-enterprise-table thead th:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 28%;
+  height: 44%;
+  width: 1px;
+  background: #dcdfe6;
 }
 
 .qihui-enterprise-table tbody td {
-  padding: 12px 10px;
-  border-bottom: 1px solid #f1f5f9;
-  color: #1e293b;
+  padding: 11px 10px;
+  border-bottom: 1px solid #ebeef5;
+  color: #303133;
   vertical-align: middle;
+  text-align: center;
 }
 
-.qihui-enterprise-table tbody tr:hover {
-  background: #f8fafc;
+.qihui-enterprise-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.qihui-enterprise-table tbody tr:hover td {
+  background: #f9fbff;
+}
+
+.qihui-td-id {
+  color: #303133;
+  font-variant-numeric: tabular-nums;
+}
+
+.qihui-td-name {
+  color: #303133;
+  font-weight: 400;
+}
+
+.qihui-td-host,
+.qihui-td-layout {
+  color: #303133;
+}
+
+.qihui-td-created {
+  color: #303133;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 .qihui-table-thumb {
-  width: 44px;
-  height: 44px;
-  border-radius: 4px;
-  border: 1px solid #e2e8f0;
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  border: 1px solid #ebeef5;
   object-fit: cover;
-  display: block;
+  display: inline-block;
+  vertical-align: middle;
+  box-shadow: 0 2px 5px rgba(15, 23, 42, 0.08);
 }
 
-/* 状态与类型轻量线框标签 (Image 1 规范) */
-.qihui-status-tag {
-  display: inline-block;
-  padding: 2px 8px;
+.qihui-time-pair {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #303133;
+  font-variant-numeric: tabular-nums;
+}
+
+.qihui-time-end {
+  color: #606266;
+}
+
+/* 状态与类型轻量标签 (对齐参考图 3) */
+.qihui-status-tag,
+.qihui-type-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  padding: 0 8px;
   border-radius: 4px;
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 400;
   white-space: nowrap;
 }
 
-.qihui-status-tag.live {
+.qihui-status-tag.live,
+.qihui-type-tag.live-type {
   color: #52c41a;
   border: 1px solid #b7eb8f;
   background: #f6ffed;
 }
 
 .qihui-status-tag.ended {
-  color: #8c8c8c;
-  border: 1px solid #d9d9d9;
-  background: #fafafa;
+  color: #909399;
+  border: 1px solid #dcdfe6;
+  background: #f4f4f5;
 }
 
 .qihui-status-tag.waiting {
-  color: #faad14;
-  border: 1px solid #ffe58f;
-  background: #fffbe6;
-}
-
-.qihui-type-tag {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 500;
-  white-space: nowrap;
+  color: #e6a23c;
+  border: 1px solid #f3d19e;
+  background: #fdf6ec;
 }
 
 .qihui-type-tag.replay-type {
@@ -2869,123 +3243,116 @@ dialog::backdrop {
   background: #fff7e6;
 }
 
-.qihui-type-tag.live-type {
-  color: #52c41a;
-  border: 1px solid #b7eb8f;
-  background: #f6ffed;
-}
-
 .qihui-type-tag.pseudo-type {
   color: #722ed1;
   border: 1px solid #d3adf7;
   background: #f9f0ff;
 }
 
-/* 操作链接 (Image 1 规范：中控台 编辑 复制 / 分享 ···更多) */
+/* 操作列 3×2 对齐网格 (中控台 编辑 复制 / 分享 [推拉流] ···更多) */
 .qihui-ops-links {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
   position: relative;
+  display: inline-block;
 }
 
-.qihui-ops-line {
-  display: flex;
+.qihui-ops-grid {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 6px 14px;
   align-items: center;
-  gap: 8px;
+  justify-items: center;
+}
+
+.tbl-action-placeholder {
+  display: inline-block;
+  width: 24px;
 }
 
 .tbl-action-link {
-  border: 0;
-  background: none;
-  color: #1677ff;
-  font-size: 12px;
-  cursor: pointer;
-  padding: 0;
-  text-decoration: none;
-  font-family: inherit;
-  transition: color 0.15s;
+  border: 0 !important;
+  background: transparent !important;
+  color: #1677ff !important;
+  font-size: 12.5px !important;
+  min-height: 0 !important;
+  height: auto !important;
+  line-height: 1.4 !important;
+  cursor: pointer !important;
+  padding: 0 !important;
+  text-decoration: none !important;
+  white-space: nowrap !important;
 }
 
 .tbl-action-link:hover {
-  text-decoration: underline;
-  color: #4096ff;
-}
-
-.tbl-action-link.qihui-more-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  cursor: pointer;
+  color: #4096ff !important;
+  text-decoration: underline !important;
 }
 
 /* 更多操作浮层下拉菜单 */
 .qihui-more-dropdown-menu {
   position: absolute;
-  left: 0;
+  right: 0;
   top: 100%;
   z-index: 999;
   background: #ffffff;
   border-radius: 6px;
-  box-shadow: 0 6px 16px 0 rgba(0, 0, 0, 0.08), 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 9px 28px 8px rgba(0, 0, 0, 0.05);
-  border: 1px solid #f0f0f0;
+  box-shadow: 0 6px 16px 0 rgba(0, 0, 0, 0.08), 0 3px 6px -4px rgba(0, 0, 0, 0.12);
+  border: 1px solid #ebeef5;
   padding: 4px;
-  min-width: 125px;
+  min-width: 132px;
   margin-top: 4px;
-  animation: opsDialogScaleIn 0.15s ease-out;
 }
 
 .qihui-dropdown-item {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 12px;
-  font-size: 12px;
-  color: #334155;
-  border: 0;
-  background: transparent;
-  border-radius: 4px;
-  cursor: pointer;
-  text-align: left;
-  white-space: nowrap;
-  transition: background 0.15s;
+  width: 100% !important;
+  min-height: 32px !important;
+  height: 32px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 0 12px !important;
+  font-size: 12px !important;
+  color: #303133 !important;
+  border: 0 !important;
+  background: transparent !important;
+  border-radius: 4px !important;
+  cursor: pointer !important;
+  text-align: left !important;
+  white-space: nowrap !important;
 }
 
 .qihui-dropdown-item:hover {
-  background: #f1f5f9;
+  background: #f5f7fa !important;
+  color: #1677ff !important;
 }
 
 .qihui-dropdown-item.danger {
-  color: #dc2626;
-  font-weight: 500;
+  color: #f56c6c !important;
 }
 
 .qihui-dropdown-item.danger:hover {
-  background: #fef2f2;
+  background: #fef0f0 !important;
 }
 
 .qihui-dropdown-item.success {
-  color: #16a34a;
-  font-weight: 500;
+  color: #52c41a !important;
 }
 
 .qihui-dropdown-item.success:hover {
-  background: #f0fdf4;
+  background: #f6ffed !important;
 }
 
 .qihui-dropdown-item.delete {
-  color: #94a3b8;
+  color: #909399 !important;
 }
 
 .qihui-dropdown-item.delete:hover {
-  color: #dc2626;
-  background: #fef2f2;
+  color: #f56c6c !important;
+  background: #fef0f0 !important;
 }
 
 /* 关播与危险操作确认弹窗 */
 .ops-confirm-modal-content {
-  padding: 6px 4px;
+  padding: 18px 24px 20px;
 }
 
 .ops-confirm-header {
@@ -3039,13 +3406,13 @@ dialog::backdrop {
   background: #ef4444 !important;
   color: #ffffff !important;
   border: 0 !important;
-  border-radius: 4px;
-  height: 32px;
-  padding: 0 16px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.15s;
+  border-radius: 4px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 16px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
 }
 
 .qihui-btn.danger-confirm:hover {
@@ -3096,11 +3463,11 @@ dialog::backdrop {
   border: 0;
   border-radius: 4px;
   height: 30px;
+  min-height: 30px;
   padding: 0 14px;
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s;
 }
 
 .ended-reopen-btn:hover {
@@ -3141,6 +3508,7 @@ dialog::backdrop {
 .mini-back-circle {
   width: 28px;
   height: 28px;
+  min-height: 28px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.2);
   color: #fff;
@@ -3236,6 +3604,7 @@ dialog::backdrop {
 .mini-ended-btn {
   width: 100%;
   height: 38px;
+  min-height: 38px;
   border-radius: 8px;
   font-size: 13px;
   font-weight: 600;
@@ -3245,7 +3614,6 @@ dialog::backdrop {
   gap: 6px;
   cursor: pointer;
   border: 0;
-  transition: all 0.15s;
 }
 
 .mini-ended-btn.replay {
@@ -3253,17 +3621,9 @@ dialog::backdrop {
   color: #ffffff;
 }
 
-.mini-ended-btn.replay:hover {
-  background: #4096ff;
-}
-
 .mini-ended-btn.shop {
   background: #f1f5f9;
   color: #334155;
-}
-
-.mini-ended-btn.shop:hover {
-  background: #e2e8f0;
 }
 
 .mini-ended-back-link {
@@ -3275,20 +3635,15 @@ dialog::backdrop {
   cursor: pointer;
 }
 
-.mini-ended-back-link:hover {
-  color: #64748b;
-}
-
 /* 分页栏 */
 .qihui-pagination-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid #f1f5f9;
+  margin-top: 14px;
+  padding-top: 10px;
   font-size: 12px;
-  color: #64748b;
+  color: #606266;
 }
 
 .qihui-pager-tools {
@@ -3298,30 +3653,53 @@ dialog::backdrop {
 }
 
 .pager-btn {
-  width: 26px;
-  height: 26px;
-  border: 1px solid #e2e8f0;
-  background: #ffffff;
-  border-radius: 4px;
-  display: grid;
-  place-items: center;
-  color: #64748b;
-  cursor: pointer;
-}
-
-.pager-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+  width: 28px !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  padding: 0 !important;
+  border: 1px solid #dcdfe6 !important;
+  background: #ffffff !important;
+  border-radius: 4px !important;
+  color: #606266 !important;
+  display: grid !important;
+  place-items: center !important;
+  font-size: 12px !important;
 }
 
 .pager-current {
-  width: 26px;
-  height: 26px;
-  background: #2563eb;
+  width: 28px;
+  height: 28px;
+  background: #1677ff;
   color: #ffffff;
   border-radius: 4px;
   display: grid;
   place-items: center;
+  font-size: 12px;
   font-weight: 600;
 }
 
+@media (max-width: 960px) {
+  .qihui-func-switches-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.ops-stream-settings .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 20px; padding: 22px 26px 8px; }
+.ops-stream-settings .field { min-width: 0; margin: 0; }
+.ops-stream-settings .dialog-info { margin: 4px 26px 18px; padding: 12px 14px; border: 1px solid #f2dfb2; border-radius: 6px; background: #fffaf0; line-height: 1.6; }
+.ops-stream-settings .dialog-foot { margin: 0; padding: 14px 26px; border-top: 1px solid #e8edf3; }
+.qihui-page-heading { display: flex; align-items: center; justify-content: space-between; margin: 10px 0 18px; }
+.qihui-page-heading h1 { margin: 0; font-size: 22px; color: #202a38; }
+.qihui-page-heading p, .qihui-data-note { margin: 6px 0 0; color: #6b7788; font-size: 13px; }
+.qihui-empty-cell { padding: 34px !important; text-align: center; color: #7b8794; }
+.qihui-empty-state { padding: 34px; border: 1px solid #e6ebf2; border-radius: 8px; background: #fff; color: #526174; }
+.qihui-empty-state strong { color: #263548; }
+.qihui-empty-state p { margin: 8px 0 0; font-size: 13px; }
+.qihui-stat-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.qihui-stat-grid article { display: grid; gap: 12px; padding: 18px; border: 1px solid #e6ebf2; border-radius: 8px; background: #fff; color: #64748b; }
+.qihui-stat-grid strong { color: #263548; font-size: 24px; font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) {
+  .ops-stream-settings .form-grid { grid-template-columns: 1fr; padding: 18px 16px 8px; }
+  .ops-stream-settings .dialog-info, .ops-stream-settings .dialog-foot { margin-right: 0; margin-left: 0; }
+  .qihui-stat-grid { grid-template-columns: 1fr; }
+}

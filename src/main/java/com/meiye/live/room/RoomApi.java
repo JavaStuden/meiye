@@ -6,7 +6,14 @@ import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.CacheControl;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.core.io.InputStreamResource;
+import com.meiye.live.media.CosStorageService;
+import java.time.Duration;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.web.csrf.CsrfToken;
 
 @RestController
 public class RoomApi {
@@ -14,13 +21,41 @@ public class RoomApi {
     private final PlaybackService playback;
     private final InteractionService interactions;
     private final CommerceService commerce;
-    public RoomApi(RoomService rooms, PlaybackService playback, InteractionService interactions, CommerceService commerce) {
-        this.rooms = rooms; this.playback = playback; this.interactions = interactions; this.commerce = commerce;
+    private final CosStorageService cos;
+    public RoomApi(RoomService rooms, PlaybackService playback, InteractionService interactions, CommerceService commerce, CosStorageService cos) {
+        this.rooms = rooms; this.playback = playback; this.interactions = interactions; this.commerce = commerce; this.cos = cos;
     }
+    @GetMapping("/api/admin/csrf") public CsrfToken csrf(CsrfToken token) { return token; }
     @GetMapping("/api/rooms") public List<RoomView> rooms() { return rooms.list(); }
     @GetMapping("/api/rooms/{id}") public RoomView room(@PathVariable long id) { return rooms.view(id); }
-    @GetMapping("/api/rooms/{id}/playback") public PlaybackService.PlaybackState playback(@PathVariable long id) { return playback.state(rooms.require(id)); }
+    @GetMapping("/api/rooms/{id}/poster")
+    public ResponseEntity<InputStreamResource> poster(@PathVariable long id) {
+        var asset = rooms.posterAsset(rooms.require(id));
+        var object = cos.getObject(asset.getObjectKey());
+        return ResponseEntity.ok()
+            .contentType(MediaType.parseMediaType(asset.getContentType()))
+            .contentLength(asset.getSizeBytes())
+            .cacheControl(CacheControl.maxAge(Duration.ofMinutes(10)).cachePublic())
+            .body(new InputStreamResource(object.getObjectContent()));
+    }
+    @PostMapping("/api/admin/rooms/{id}/poster") @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void poster(@PathVariable long id, @RequestBody PosterRequest request) {
+        rooms.setPosterAsset(id, request.mediaAssetId());
+    }
+    @PostMapping("/api/admin/rooms/{id}/status")
+    public RoomView updateAdminStatus(@PathVariable long id, @RequestBody StatusRequest request) {
+        rooms.status(id, request.status());
+        return rooms.view(id);
+    }
+    @GetMapping("/api/rooms/{id}/playback") public PlaybackService.PlaybackState playback(@PathVariable long id) {
+        Room room = rooms.require(id);
+        return playback.state(room, rooms.playbackSource(room));
+    }
     @GetMapping("/api/rooms/{id}/messages") public List<InteractionService.MessageView> messages(@PathVariable long id) { return interactions.list(id); }
+    @GetMapping({"/api/admin/rooms/{id}/messages", "/meiye/api/admin/rooms/{id}/messages"})
+    public List<InteractionService.MessageView> adminMessages(@PathVariable long id) { return interactions.listForAdmin(id); }
+    @DeleteMapping({"/api/admin/rooms/{id}/messages", "/meiye/api/admin/rooms/{id}/messages"})
+    public Map<String, Long> clearMessages(@PathVariable long id) { return Map.of("deleted", interactions.clear(id)); }
     @PostMapping("/api/rooms/{id}/messages") @ResponseStatus(HttpStatus.CREATED)
     public InteractionService.MessageView post(@PathVariable long id, @Valid @RequestBody InteractionService.MessageRequest request, HttpSession session) {
         interactions.throttle(session, "message", 1000); return interactions.post(id, request);
@@ -34,23 +69,7 @@ public class RoomApi {
     public OrderView order(@PathVariable long id, @Valid @RequestBody CommerceService.OrderRequest request, HttpSession session) {
         interactions.throttle(session, "order", 3000); return commerce.create(id, request);
     }
-    @PostMapping("/api/rooms/{id}/status")
-    public Map<String, Object> updateStatus(@PathVariable long id, @RequestBody(required = false) Map<String, String> body) {
-        String statusStr = (body != null && body.containsKey("status")) ? body.get("status") : "ENDED";
-        RoomStatus targetStatus;
-        if ("直播中".equals(statusStr) || "LIVE".equalsIgnoreCase(statusStr)) {
-            targetStatus = RoomStatus.LIVE;
-        } else if ("待开播".equals(statusStr) || "SCHEDULED".equalsIgnoreCase(statusStr)) {
-            targetStatus = RoomStatus.SCHEDULED;
-        } else if ("草稿".equals(statusStr) || "DRAFT".equalsIgnoreCase(statusStr)) {
-            targetStatus = RoomStatus.DRAFT;
-        } else {
-            targetStatus = RoomStatus.ENDED;
-        }
-        try {
-            rooms.status(id, targetStatus);
-        } catch (Exception ignored) {}
-        return Map.of("id", id, "status", targetStatus.label(), "code", 200);
-    }
     @GetMapping("/api/orders/{code}") public OrderView lookup(@PathVariable String code, @RequestParam String phone) { return commerce.lookup(code, phone); }
+    public record PosterRequest(long mediaAssetId) { }
+    public record StatusRequest(RoomStatus status) { }
 }

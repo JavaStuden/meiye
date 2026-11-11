@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111315">
+  <title th:text="${room.title + ' · 美业直播'}">美业直播</title>
+  <style>
+    :root{color-scheme:dark;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#111315;color:#f6f6f6}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:#111315}.page{width:min(100%,720px);margin:0 auto;padding-bottom:env(safe-area-inset-bottom)}.player{position:relative;background:#000;aspect-ratio:16/9;display:grid;place-items:center}.player video{width:100%;height:100%;object-fit:contain;background:#000}.poster{width:100%;height:100%;object-fit:cover}.player-empty{position:absolute;inset:0;display:grid;place-items:center;padding:24px;text-align:center;color:#d4d4d4;background:#17191c}.player-label{position:absolute;top:12px;left:12px;padding:5px 9px;background:#17191ccc;border-radius:4px;font-size:12px}.content{padding:18px 16px}.title{font-size:19px;line-height:1.45;margin:0 0 7px}.meta{font-size:13px;color:#aaa;margin:0 0 14px}.notice{padding:11px 12px;background:#202326;border-left:3px solid #e87154;color:#ddd;font-size:13px;line-height:1.6}.comments-head{display:flex;justify-content:space-between;align-items:center;margin:22px 0 10px}.comments-head h2{font-size:16px;margin:0}.comments-head span{font-size:12px;color:#aaa}.comment-list{min-height:90px;max-height:36vh;overflow:auto;border-top:1px solid #303336;border-bottom:1px solid #303336;padding:4px 0}.comment{font-size:14px;line-height:1.6;margin:9px 0;overflow-wrap:anywhere}.comment b{color:#edaa83;font-weight:500}.empty{color:#888;font-size:13px;padding:10px 0}.comment-form{position:sticky;bottom:0;padding:12px 16px calc(12px + env(safe-area-inset-bottom));background:#17191c;border-top:1px solid #303336;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}.fields{display:grid;grid-template-columns:100px minmax(0,1fr);gap:7px}.comment-form input{min-width:0;height:40px;border:1px solid #414448;border-radius:5px;background:#222529;color:#fff;padding:0 10px;font-size:14px}.comment-form button{height:40px;padding:0 17px;border:0;border-radius:5px;background:#e87154;color:#fff;font-size:14px}.comment-form button:disabled{opacity:.55}.comment-error{grid-column:1/-1;min-height:17px;color:#f3a38f;font-size:12px}.footer{padding:18px;text-align:center;color:#666;font-size:11px}@media(min-width:600px){.content{padding:22px}.comment-form{padding-left:max(16px,calc((100vw - 720px)/2 + 16px));padding-right:max(16px,calc((100vw - 720px)/2 + 16px))}}
+    :root{background:#08090a}body{overflow:hidden}.page{position:fixed;inset:0;width:100%;height:100vh;height:100dvh;margin:0;padding:0}.player{position:absolute;inset:0;aspect-ratio:auto;display:block}.player video,.poster{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.player-label{top:max(15px,env(safe-area-inset-top));left:14px;border-radius:20px}.title{position:absolute;top:calc(58px + env(safe-area-inset-top));left:16px;right:16px;margin:0;font-size:18px;line-height:1.4;text-shadow:0 1px 5px #000}.meta{position:absolute;top:calc(87px + env(safe-area-inset-top));left:16px;margin:0;font-size:12px;color:#ddd;text-shadow:0 1px 5px #000}.notice{position:absolute;top:calc(116px + env(safe-area-inset-top));left:14px;max-width:88%;padding:7px 10px;border:0;border-radius:16px;background:#17191c99;font-size:12px}.comments-head{display:none}.comment-list{position:absolute;right:14px;bottom:calc(76px + env(safe-area-inset-bottom));left:14px;display:flex;flex-direction:column;gap:7px;max-height:34vh;overflow:hidden;border:0;padding:0}.comment{align-self:flex-start;max-width:90%;margin:0;padding:6px 10px;border-radius:16px;background:#12141699;color:#fff}.comment b{color:#f0a9ce;font-weight:700}.empty{margin:0;padding:6px 10px;color:#ddd}.comment-form{position:absolute;right:0;bottom:0;left:0;padding:10px 14px calc(12px + env(safe-area-inset-bottom));background:linear-gradient(0deg,#090a0cdd,#090a0c55)}.comment-form input{border-radius:22px;background:#17191caa;color:#fff}.comment-form input::placeholder{color:#ddd}.comment-form button{border-radius:22px}.comment-error{min-height:0}.footer{display:none}
+  </style>
+</head>
+<body>
+<main class="page" th:attr="data-room-id=${room.id},data-message-url=@{/api/rooms/{id}/messages(id=${room.id})},data-comment-url=@{/api/miniprogram/rooms/{id}/messages(id=${room.id})}">
+  <section class="player">
+    <video th:if="${playback.source != null and !playback.source.isBlank()}" th:src="${playback.source}" th:poster="${room.posterUrl}" controls autoplay playsinline webkit-playsinline preload="metadata" th:attr="loop=${room.mode.name() == 'REPLAY' or room.mode.name() == 'PSEUDO'}">当前浏览器不支持播放视频。</video>
+    <img class="poster" th:if="${playback.source == null or playback.source.isBlank()}" th:src="${room.posterUrl}" th:alt="${room.title}">
+    <div class="player-empty" th:if="${playback.source == null or playback.source.isBlank()}" th:text="${playback.phase == 'UNCONFIGURED' ? '本场暂未配置可播放的视频' : '当前场次没有可播放的视频'}">本场暂未配置可播放的视频</div>
+    <span class="player-label" th:text="${room.modeLabel}">录播回放</span>
+    <section class="content">
+    <h1 class="title" th:text="${room.title}">直播间标题</h1>
+    <p class="meta"><span th:text="${room.host}">主播</span> · <span th:text="${room.statusLabel}">状态</span></p>
+    <div class="notice" th:if="${room.announcement != null and !room.announcement.isBlank()}" th:text="${room.announcement}"></div>
+    <div class="comments-head"><h2>直播评论</h2><span>与小程序共用评论流</span></div>
+    <div class="comment-list" id="comments" aria-live="polite"><p class="empty">正在读取评论…</p></div>
+    </section>
+  <form class="comment-form" id="comment-form" th:if="${commentsEnabled}">
+    <div class="fields"><input id="author" maxlength="24" autocomplete="nickname" placeholder="昵称" required><input id="message" maxlength="300" placeholder="说点什么…" required></div>
+    <button id="send" type="submit">发送</button>
+    <div class="comment-error" id="comment-error" role="status"></div>
+  </form>
+  <p class="footer">旗慧美业 · 直播间</p>
+</main>
+<script>
+(() => {
+  const page = document.querySelector('.page');
+  const list = document.getElementById('comments');
+  const error = document.getElementById('comment-error');
+  const form = document.getElementById('comment-form');
+  const roomId = page.dataset.roomId;
+  const tokenKey = 'meiyeViewerToken';
+  let token = localStorage.getItem(tokenKey);
+  if (!/^[A-Za-z0-9_-]{16,80}$/.test(token || '')) {
+    token = `h5_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 14)}`;
+    localStorage.setItem(tokenKey, token);
+  }
+  const render = (messages) => {
+    list.replaceChildren();
+    if (!messages.length) {
+      const empty = document.createElement('p'); empty.className = 'empty'; empty.textContent = '暂无评论'; list.append(empty); return;
+    }
+    for (const message of messages.slice(-4)) {
+      const row = document.createElement('p'); row.className = 'comment';
+      const author = document.createElement('b'); author.textContent = `${message.author}：`;
+      row.append(author, document.createTextNode(message.content)); list.append(row);
+    }
+    list.scrollTop = list.scrollHeight;
+  };
+  const load = async () => {
+    try {
+      const response = await fetch(page.dataset.messageUrl, { cache: 'no-store' });
+      if (!response.ok) throw new Error('评论暂时无法读取');
+      render(await response.json());
+    } catch (_) { if (!list.children.length) list.firstElementChild.textContent = '评论暂时无法读取'; }
+  };
+  if (form) form.addEventListener('submit', async (event) => {
+    event.preventDefault(); error.textContent = '';
+    const button = document.getElementById('send'); button.disabled = true;
+    try {
+      const response = await fetch(page.dataset.commentUrl, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Viewer-Token': token },
+        body: JSON.stringify({ author: document.getElementById('author').value.trim(), content: document.getElementById('message').value.trim() })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.message || '评论发送失败，请稍后重试');
+      document.getElementById('message').value = ''; await load();
+    } catch (failure) { error.textContent = failure.message; }
+    finally { button.disabled = false; }
+  });
+  load(); setInterval(load, 5000);
+})();
+</script>
+</body>
+</html>

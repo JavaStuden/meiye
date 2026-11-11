@@ -15,7 +15,11 @@ public class Room {
     @Column(length = 1000) private String announcement;
     @Column(length = 2048) private String streamUrl;
     @Column(length = 2048) private String posterUrl;
+    private Long posterAssetId;
+    private Long mediaAssetId;
     private Instant scheduledAt;
+    private Instant liveStartedAt;
+    private Instant liveEndedAt;
     private int durationSeconds;
     private boolean commentsEnabled = true;
     private long likes;
@@ -36,8 +40,16 @@ public class Room {
     public void setStreamUrl(String streamUrl) { this.streamUrl = streamUrl; }
     public String getPosterUrl() { return posterUrl; }
     public void setPosterUrl(String posterUrl) { this.posterUrl = posterUrl; }
+    public Long getPosterAssetId() { return posterAssetId; }
+    public void setPosterAssetId(Long posterAssetId) { this.posterAssetId = posterAssetId; }
+    public Long getMediaAssetId() { return mediaAssetId; }
+    public void setMediaAssetId(Long mediaAssetId) { this.mediaAssetId = mediaAssetId; }
     public Instant getScheduledAt() { return scheduledAt; }
     public void setScheduledAt(Instant scheduledAt) { this.scheduledAt = scheduledAt; }
+    public Instant getLiveStartedAt() { return liveStartedAt; }
+    public void setLiveStartedAt(Instant liveStartedAt) { this.liveStartedAt = liveStartedAt; }
+    public Instant getLiveEndedAt() { return liveEndedAt; }
+    public void setLiveEndedAt(Instant liveEndedAt) { this.liveEndedAt = liveEndedAt; }
     public int getDurationSeconds() { return durationSeconds; }
     public void setDurationSeconds(int durationSeconds) { this.durationSeconds = durationSeconds; }
     public boolean isCommentsEnabled() { return commentsEnabled; }

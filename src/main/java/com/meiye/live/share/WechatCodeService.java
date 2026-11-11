@@ -18,7 +18,7 @@ import org.springframework.web.server.ResponseStatusException;
 /** Only server-side credentials are used; upstream response bodies and request URLs are never logged. */
 @Service
 public class WechatCodeService {
-    static final String PAGE = "pages/watch/watch";
+    static final String PAGE = "pages/watch-share/watch-share";
     private final WechatShareProperties settings;
     private final ObjectMapper json;
     private final HttpClient client;
@@ -122,7 +122,7 @@ public class WechatCodeService {
         String message = switch (code) {
             case 40164 -> "请在微信小程序后台将此服务器出口 IP 加入接口 IP 白名单";
             case 40013, 40125 -> "小程序 AppID 或 AppSecret 不正确，请检查服务器配置";
-            case 41030 -> "正式版尚无观看页，请发布包含 pages/watch/watch 的小程序版本";
+            case 41030 -> "正式版尚无分享观看页，请发布包含 pages/watch-share/watch-share 的小程序版本";
             case 45009 -> "微信接口调用次数已达上限，请稍后重试";
             case 85096 -> "小程序版本暂不可用，请检查微信后台发布状态";
             default -> "微信暂未生成小程序码，请检查小程序权限和服务器配置";

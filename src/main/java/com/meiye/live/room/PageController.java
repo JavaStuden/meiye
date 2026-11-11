@@ -1,6 +1,8 @@
 package com.meiye.live.room;
 
 import com.meiye.live.commerce.CommerceService;
+import com.meiye.live.media.CosStorageService;
+import com.meiye.live.media.MediaAssetRepository;
 import jakarta.validation.Valid;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -13,8 +15,13 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 @Controller
 public class PageController {
     private final RoomService rooms;
+    private final PlaybackService playback;
     private final CommerceService commerce;
-    public PageController(RoomService rooms, CommerceService commerce) { this.rooms = rooms; this.commerce = commerce; }
+    private final MediaAssetRepository mediaAssets;
+    private final CosStorageService cos;
+    public PageController(RoomService rooms, PlaybackService playback, CommerceService commerce, MediaAssetRepository mediaAssets, CosStorageService cos) {
+        this.rooms = rooms; this.playback = playback; this.commerce = commerce; this.mediaAssets = mediaAssets; this.cos = cos;
+    }
 
     @GetMapping({"/", "/meiye", "/meiye/"})
     public String legacy(@RequestParam(required = false) String view,
@@ -40,6 +47,18 @@ public class PageController {
         return "viewer";
     }
 
+    @GetMapping("/share/rooms/{id}")
+    public String sharedViewer(@PathVariable long id, Model model) {
+        Room room = rooms.require(id);
+        PlaybackService.PlaybackState state;
+        try { state = playback.state(room, rooms.playbackSource(room)); }
+        catch (org.springframework.web.server.ResponseStatusException unavailable) { state = playback.state(room, null); }
+        model.addAttribute("room", rooms.view(id));
+        model.addAttribute("playback", state);
+        model.addAttribute("commentsEnabled", room.isCommentsEnabled());
+        return "share-viewer";
+    }
+
     @GetMapping("/login") public String login() { return "login"; }
 
     @GetMapping("/admin")
@@ -50,12 +69,18 @@ public class PageController {
 
     @GetMapping("/admin/orders") public String orders(Model model) { model.addAttribute("orders", commerce.orders()); return "orders"; }
     @GetMapping("/admin/rooms/new") public String create(Model model) {
-        model.addAttribute("room", null); model.addAttribute("scheduledAtLocal", ""); return "room-form";
+        model.addAttribute("room", null); model.addAttribute("scheduledAtLocal", ""); addMediaAssets(model); return "room-form";
     }
     @GetMapping("/admin/rooms/{id}/edit") public String edit(@PathVariable long id, Model model) {
         RoomView room = rooms.view(id); model.addAttribute("room", room);
         model.addAttribute("scheduledAtLocal", room.scheduledAt() == null ? "" : DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm").withZone(ZoneId.of("Asia/Shanghai")).format(room.scheduledAt()));
+        addMediaAssets(model);
         return "room-form";
+    }
+    private void addMediaAssets(Model model) {
+        model.addAttribute("mediaAssets", cos.ready() ? mediaAssets.findTop200ByOrderByCreatedAtDesc().stream().filter(asset -> asset.getContentType().startsWith("video/")).toList() : java.util.List.of());
+        model.addAttribute("posterAssets", cos.ready() ? mediaAssets.findTop200ByOrderByCreatedAtDesc().stream().filter(asset -> asset.getContentType().startsWith("image/")).toList() : java.util.List.of());
+        model.addAttribute("cosReady", cos.ready());
     }
     @PostMapping("/admin/rooms") public String save(@Valid @ModelAttribute RoomForm form, BindingResult errors, RedirectAttributes redirect) {
         if (errors.hasErrors()) throw new IllegalArgumentException("场次参数不正确");

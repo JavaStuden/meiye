@@ -51,5 +51,5 @@ public class RoomShareApi {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).contentType(MediaType.IMAGE_PNG).body(out.toByteArray());
     }
 
-    private String h5Url(long id) { return settings.watchUrl() + "?view=h5&room=" + id; }
+    private String h5Url(long id) { return settings.h5RoomUrl() + id; }
 }

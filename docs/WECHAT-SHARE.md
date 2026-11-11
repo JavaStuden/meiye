@@ -10,6 +10,7 @@
 | `WECHAT_APP_SECRET` | 该小程序后台的 AppSecret；仅在服务器配置，不放源码、前端或聊天中 |
 | `WECHAT_ENV_VERSION` | 默认 `release`（正式版），也支持 `trial`、`develop` |
 | `MEIYE_PUBLIC_WATCH_URL` | 默认 `https://voice.yourunshi.online/meiye/meiye/`，不含查询参数 |
+| `MEIYE_PUBLIC_H5_ROOM_URL` | H5 分享观看页前缀，默认 `https://voice.yourunshi.online/meiye/share/rooms/`，后端会追加房间编号 |
 
 把变量加到 meiye 应用已有的受限环境配置文件中，重启 meiye 服务后生效。不要改动 Qwen 服务配置。若微信返回 `40164`，在小程序后台的接口 IP 白名单添加应用服务器实际出口 IP。`41030` 表示正式版缺少指定页面，需要先发布观看页。
 
@@ -19,11 +20,11 @@
 
 ## 扫码路由及发布
 
-微信接口：`POST https://api.weixin.qq.com/wxa/getwxacodeunlimit`。目标页固定为 `pages/watch/watch`，用 `scene=id=房间编号` 传参。正式版启用 `check_path`；服务端使用稳定版 access token，提前 120 秒更新，遇到 token 失效重试一次。每进程最多缓存 200 张真实码。
+微信接口：`POST https://api.weixin.qq.com/wxa/getwxacodeunlimit`。目标页为 `pages/watch-share/watch-share`，用 `scene=id=房间编号` 传参。小程序内从直播列表进入 `pages/watch/watch`，显示原生返回导航；分享卡片和管理端生成的小程序码进入独立的沉浸式页面，不显示原生左上角导航。正式版启用 `check_path`；服务端使用稳定版 access token，提前 120 秒更新，遇到 token 失效重试一次。每进程最多缓存 200 张真实码。
 
-小程序 `pages/watch/watch.js` 现已支持解析微信传入的 `scene`，保留原来的 `?id=编号` 分享路径。**需要将这次修改上传并重新发布小程序，已发布的旧包不会自动获得 scene 解析逻辑。**
+两个观看页共用后端读取逻辑。分享页支持 `scene` 和 `?id=编号` 参数。**正式版扫码提示“页面不存在”时，说明微信当前正式版还没有 `pages/watch-share/watch-share`；本地代码和服务器无法替已发布的小程序更新页面，必须在微信开发者工具上传并发布包含该页面的新版本，再重新生成小程序码。**旧码也要重新生成。
 
-小程序目前仍使用本地演示房间数据。房间未在小程序中存在时会显示“暂未同步”，不会误开房间 1；真实分享码本身不会同步网页中的场次、视频或评论。
+H5 二维码直达 `/meiye/share/rooms/{id}`，不经过 PC/小程序/H5 演示预览框。该页使用服务器数据库中的房间、播放源、封面和评论，支持录播循环播放与向同一评论流发送消息。小程序分享码仅携带房间编号，不会复制视频或评论数据。若所选房间未配置视频，观看页会明确提示。
 
 ## 接口与验收
 

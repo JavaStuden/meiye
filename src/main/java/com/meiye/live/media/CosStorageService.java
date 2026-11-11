@@ -5,6 +5,7 @@ import com.qcloud.cos.ClientConfig;
 import com.qcloud.cos.auth.BasicCOSCredentials;
 import com.qcloud.cos.auth.COSCredentials;
 import com.qcloud.cos.model.ObjectMetadata;
+import com.qcloud.cos.model.COSObject;
 import com.qcloud.cos.model.PutObjectRequest;
 import com.qcloud.cos.region.Region;
 import com.qcloud.cos.transfer.TransferManager;
@@ -65,6 +66,11 @@ public class CosStorageService {
         Date expiry = new Date(System.currentTimeMillis() + 6L * 60 * 60 * 1000);
         URL url = client.generatePresignedUrl(settings.bucket(), key, expiry);
         return url.toString();
+    }
+
+    public COSObject getObject(String key) {
+        requireReady();
+        return client.getObject(settings.bucket(), key);
     }
 
     public String objectKey(String id) { return settings.bucket() + ".cos." + settings.region() + ".myqcloud.com/" + id; }

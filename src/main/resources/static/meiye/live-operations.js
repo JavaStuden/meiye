@@ -6,7 +6,15 @@
 
 const opsVideoUrls = new Map();
 const opsImageUrls = new Map();
+const opsImageAssetIds = new Map();
 let pendingRoomId = null;
+let serverRoomsLoaded = false;
+let serverRoomsLoading = false;
+let serverRoomsError = '';
+let serverRooms = [];
+const serverPlaybackByRoom = new Map();
+const serverPlaybackRequests = new Set();
+let liveDurationTimer = null;
 let currentLccSubTab = 'tasks';
 let currentLccMainTab = 'robot';
 let lccTaskFilterText = '';
@@ -52,6 +60,7 @@ if (!db.inviteRecords || !db.inviteRecords.length) {
 
 let serverMediaLoaded = false;
 let serverMediaError = '';
+let serverMediaLoading = false;
 if (db.configs?.cos) {
   delete db.configs.cos.secretId;
   delete db.configs.cos.secretKey;
@@ -60,6 +69,9 @@ if (db.configs?.cos) {
 }
 
 async function loadServerMedia() {
+  if (serverMediaLoading) return;
+  serverMediaLoading = true;
+  try {
   const endpoint = location.pathname.startsWith('/meiye/') ? '/meiye/api/admin/media' : '/api/admin/media';
   const response = await fetch(endpoint, {credentials: 'same-origin', cache: 'no-store'});
   if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) throw new Error(response.status === 401 || response.status === 403 || response.redirected ? '请先登录管理后台' : 'COS 尚未配置或素材列表暂不可用');
@@ -76,14 +88,41 @@ async function loadServerMedia() {
   persist();
   serverMediaLoaded = true;
   serverMediaError = '';
+  } catch (error) {
+    serverMediaError = error.message || '读取 COS 素材失败';
+    throw error;
+  } finally {
+    serverMediaLoading = false;
+  }
 }
+
+function serverMediaPage() {
+  const assets = db.assets.filter(asset => asset.serverId);
+  const rows = assets.map(asset => `<tr><td><b>${E(asset.name)}</b></td><td>${E(asset.fileSize || '—')}</td><td>${E(asset.date)}</td><td>已上传到 COS</td><td><button class="link" onclick="previewVideoWithMinutes(${asset.id})">预览</button></td></tr>`);
+  const content = serverMediaLoading ? '<div class="empty">正在读取 COS 素材…</div>' : serverMediaError
+    ? `<div class="empty">${E(serverMediaError)}</div>` : rows.length
+      ? table(['素材名称', '大小', '上传日期', '状态', '操作'], rows) : '<div class="empty">COS 素材库暂无视频</div>';
+  if (!serverMediaLoaded && !serverMediaLoading && !serverMediaError) loadServerMedia().then(() => render()).catch(() => render());
+  return title('录播视频素材', '上传到 COS 后，在场次配置中选择素材并保存即可播放', '<button class="primary" onclick="openServerMediaUpload()">上传录播视频</button>')
+    + `<section class="card">${content}</section>`;
+}
+
+window.renderServerMediaPage = serverMediaPage;
+window.openServerMediaUpload = function() { openVideoLibraryModal(0); };
 
 if (location.pathname === '/admin') loadServerMedia().then(() => render()).catch(() => {});
 
-function csrfHeaders() {
+async function csrfHeaders() {
   const headers = new Headers();
-  const token = document.querySelector('meta[name="_csrf"]')?.content;
-  const name = document.querySelector('meta[name="_csrf_header"]')?.content;
+  let token = document.querySelector('meta[name="_csrf"]')?.content;
+  let name = document.querySelector('meta[name="_csrf_header"]')?.content;
+  if (!token || !name) {
+    const response = await fetch(adminApiPath('/api/admin/csrf'), { credentials: 'same-origin' });
+    if (!response.ok) throw new Error(response.status === 401 || response.status === 403 || response.redirected ? '请先登录管理后台' : '无法初始化安全令牌');
+    const csrf = await response.json();
+    token = csrf.token;
+    name = csrf.headerName;
+  }
   if (token && name) headers.set(name, token);
   return headers;
 }
@@ -178,13 +217,102 @@ if (!db.robotTasks.some(t => t.name === '向总互动')) {
 }
 
 function roomVideoUrl(asset) {
-  if (!asset) return 'assets/reference.mp4';
-  return opsVideoUrls.get(Number(asset.id)) || asset.videoUrl || asset.url || 'assets/reference.mp4';
+  if (!asset) return '';
+  return opsVideoUrls.get(Number(asset.id)) || asset.videoUrl || asset.url || '';
+}
+
+function adminApiPath(path) {
+  return `${location.pathname.startsWith('/meiye/') ? '/meiye' : ''}${path}`;
+}
+
+function mapServerRoom(room) {
+  const date = value => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '—';
+  return {
+    id: Number(room.id), name: room.title, host: room.host,
+    mode: room.modeLabel, status: room.statusLabel,
+    time: date(room.scheduledAt), end: '—',
+    createdAt: '—', cover: room.posterUrl || '', posterUrl: room.posterUrl || '',
+    streamUrl: room.streamUrl || '', mediaAssetId: room.mediaAssetId,
+    showInList: true, layout: '—',
+    _server: room
+  };
+}
+
+function formatLiveDuration(room, now = Date.now()) {
+  const started = Date.parse(room?.liveStartedAt || '');
+  if (!Number.isFinite(started)) return '未记录';
+  const ended = Date.parse(room?.liveEndedAt || '');
+  const seconds = Math.max(0, Math.floor(((Number.isFinite(ended) ? ended : now) - started) / 1000));
+  const hours = Math.floor(seconds / 3600).toString().padStart(2, '0');
+  const minutes = Math.floor(seconds % 3600 / 60).toString().padStart(2, '0');
+  const remainder = Math.floor(seconds % 60).toString().padStart(2, '0');
+  return `${hours}:${minutes}:${remainder}`;
+}
+
+function startLiveDurationTicker(room) {
+  clearInterval(liveDurationTimer);
+  const display = document.getElementById('lcc-timer-display');
+  if (!display) return;
+  display.textContent = formatLiveDuration(room);
+  if (!room?.liveStartedAt || room.liveEndedAt) return;
+  liveDurationTimer = setInterval(() => {
+    const target = document.getElementById('lcc-timer-display');
+    if (!target) return clearInterval(liveDurationTimer);
+    target.textContent = formatLiveDuration(room);
+  }, 1000);
+}
+
+async function loadServerRooms() {
+  if (serverRoomsLoading) return;
+  serverRoomsLoading = true;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch(adminApiPath('/api/rooms'), {
+      credentials: 'same-origin', cache: 'no-store', signal: controller.signal
+    });
+    if (!response.ok) throw new Error(response.status === 401 || response.status === 403 || response.redirected ? '请先登录管理后台' : '读取数据库场次失败');
+    const rows = await response.json();
+    if (!Array.isArray(rows)) throw new Error('数据库场次接口返回格式不正确');
+    serverRooms = rows.map(mapServerRoom);
+    serverRoomsLoaded = true;
+    serverRoomsError = '';
+  } catch (error) {
+    serverRoomsLoaded = false;
+    serverRoomsError = error.name === 'AbortError' ? '读取数据库场次超时，请重试' : error.message || '读取数据库场次失败';
+  } finally {
+    clearTimeout(timeout);
+    serverRoomsLoading = false;
+    try {
+      render();
+    } catch (error) {
+      console.error('Failed to render database rooms', error);
+      serverRoomsLoaded = false;
+      serverRoomsError = '数据库场次已返回，但页面渲染失败，请重试';
+      try { render(); } catch (renderError) { console.error('Failed to render room error state', renderError); }
+    }
+  }
+}
+
+function ensureServerPlayback(roomId) {
+  const id = Number(roomId);
+  const room = serverRooms.find(item => item.id === id)?._server;
+  if (!room || (!room.mediaAssetId && !room.streamUrl) || serverPlaybackRequests.has(id)) return;
+  const cached = serverPlaybackByRoom.get(id);
+  if (cached && Date.now() - cached.loadedAt < 10 * 60 * 1000) return;
+  serverPlaybackRequests.add(id);
+  fetch(adminApiPath(`/api/rooms/${id}/playback`), {credentials: 'same-origin', cache: 'no-store'})
+    .then(async response => {
+      if (!response.ok) throw new Error(`读取播放源失败（HTTP ${response.status}）`);
+      serverPlaybackByRoom.set(id, {...await response.json(), loadedAt: Date.now()});
+    })
+    .catch(error => serverPlaybackByRoom.set(id, {phase: 'ERROR', error: error.message, loadedAt: Date.now()}))
+    .finally(() => { serverPlaybackRequests.delete(id); render(); });
 }
 
 function roomPosterUrl(room) {
   if (!room) return 'assets/live-still.png';
-  return opsImageUrls.get(`${room.id}:cover`) || room.posterUrl || 'assets/live-still.png';
+  return opsImageUrls.get(`${room.id}:cover`) || room.posterUrl || room.cover || 'assets/live-still.png';
 }
 
 function roomBackgroundUrl(room) {
@@ -248,10 +376,16 @@ function addLocalVideo(file) {
    ========================================================================== */
 
 function controlPage() {
-  const r = room() || db.rooms[0];
+  const localRoom = room() || db.rooms[0];
+  const serverRoom = serverRooms.find(item => item.id === Number(localRoom.id))?._server;
+  const playback = serverPlaybackByRoom.get(Number(localRoom.id));
+  const r = serverRoom ? {...localRoom, name: serverRoom.title, host: serverRoom.host, mode: serverRoom.modeLabel, status: serverRoom.statusLabel, posterUrl: serverRoom.posterUrl} : localRoom;
   const asset = db.assets.find(a => a.id === r.asset) || db.assets[0];
-  const videoSrc = asset ? roomVideoUrl(asset) : 'assets/reference.mp4';
-  const isPlaying = r.status === '直播中';
+  const videoSrc = serverRoom ? playback?.source || '' : asset ? roomVideoUrl(asset) : '';
+  const isPlaying = serverRoom ? playback?.phase === 'PLAYING' : r.status === '直播中';
+  const videoPlayer = videoSrc
+    ? `<video id="lcc-player" src="${E(videoSrc)}" controls autoplay loop muted poster="${E(roomPosterUrl(r))}" onerror="this.insertAdjacentHTML('afterend','<p class=\"lcc-no-video\">视频无法播放，请检查 COS 权限或视频编码格式。</p>')"></video>`
+    : `<div class="lcc-no-video">${E(playback?.error || (serverRoom ? '数据库场次暂未返回可播放视频' : '此演示场次未配置真实视频地址'))}</div>`;
 
   return `
   <div class="live-control-center">
@@ -275,7 +409,7 @@ function controlPage() {
 
       <!-- 中间数据流水 (Metrics) -->
       <div class="lcc-metrics-bar">
-        <div class="lcc-metric-item"><i class="lcc-dot cyan"></i> 直播时长 <b id="lcc-timer-display">70:46:20</b></div>
+        <div class="lcc-metric-item"><i class="lcc-dot cyan"></i> 直播时长 <b id="lcc-timer-display">${E(formatLiveDuration(serverRoom))}</b></div>
         <div class="lcc-metric-item"><i class="lcc-dot blue"></i> 在线人数 <b>${r.onlineCount || 1}</b></div>
         <div class="lcc-metric-item"><i class="lcc-dot purple"></i> 累计人数 <b>${r.showCumulative !== false ? (r.totalAudience || 5) : '—'}</b></div>
         <div class="lcc-metric-item"><i class="lcc-dot yellow"></i> 火力值 <b>${r.likes || 0}</b></div>
@@ -304,7 +438,7 @@ function controlPage() {
       <!-- 左栏：大视窗视频画面与弹幕聊天室 -->
       <aside class="lcc-left-col">
         <div class="lcc-video-box">
-          <video id="lcc-player" src="${E(videoSrc)}" controls autoplay loop muted poster="${E(roomPosterUrl(r))}" style="${!isPlaying ? 'filter: brightness(0.35) grayscale(0.5);' : ''}"></video>
+          ${videoPlayer}
           ${isPlaying ? `
             <div class="lcc-video-tag">
               <i></i> ${r.mode === '录播' ? '录播进行中 · 观众可见' : '实时直播中 · 观众可见'}
@@ -1239,7 +1373,7 @@ function openLiveShareModal(id) {
   }).catch(error => { setError('mini', error); setError('h5', error); });
 }
 
-function copyMiniProgramPath(id) { copyH5LiveUrl(`pages/watch/watch?id=${id}`); }
+function copyMiniProgramPath(id) { copyH5LiveUrl(`pages/watch-share/watch-share?id=${id}`); }
 
 function copyH5LiveUrl(url) {
   if (!navigator.clipboard) return toast('请手动复制：' + url);
@@ -1284,7 +1418,7 @@ function openVideoLibraryModal(activeAssetId) {
           <input id="videoSearchInput" placeholder="搜索录像名称或时长..." style="height:32px;padding:0 8px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;width:200px" oninput="renderVideoLibGrid(${activeAssetId})">
           <div class="btn-group">
             <label class="button primary small" style="margin:0;cursor:pointer">
-              ＋ 本地上传视频
+              ＋ 上传到 COS
               <input type="file" accept="video/mp4,video/*" style="display:none" onchange="handleModalLocalUpload(this, ${activeAssetId})">
             </label>
             <button class="small" onclick="openCosSettingsModal()">☁️ 腾讯云 COS 设置</button>
@@ -1307,6 +1441,8 @@ function openVideoLibraryModal(activeAssetId) {
   });
 }
 
+window.openServerMediaUpload = function() { openVideoLibraryModal(0); };
+
 function switchVideoFolder(f, activeAssetId) {
   selectedFolder = f;
   const grid = $('#opsVideoLibGrid');
@@ -1317,15 +1453,14 @@ function switchVideoFolder(f, activeAssetId) {
 function renderVideoLibGridHtml(activeAssetId) {
   const query = $('#videoSearchInput')?.value?.trim().toLowerCase() || '';
   const filtered = db.assets.filter(a => {
-    if (selectedFolder !== '全部视频' && selectedFolder !== '腾讯云 COS 存储' && a.folder !== selectedFolder) return false;
-    if (selectedFolder === '腾讯云 COS 存储' && !a.source.includes('COS')) return false;
+    if (!a.serverId || !String(a.source || '').includes('COS')) return false;
     if (query && !a.name.toLowerCase().includes(query) && !a.duration.includes(query)) return false;
     return true;
   });
 
   if (!filtered.length) {
     return `<div style="grid-column:1/-1;text-align:center;color:#94a3b8;padding:40px">
-      ${selectedFolder === '腾讯云 COS 存储' ? E(serverMediaError || 'COS 素材库为空，请上传视频') : '暂无匹配的视频，可点击右上角【本地上传视频】'}
+      ${E(serverMediaError || 'COS 素材库暂无真实视频，请上传视频后再选择')}
     </div>`;
   }
 
@@ -1339,7 +1474,7 @@ function renderVideoLibGridHtml(activeAssetId) {
         <h4>${E(a.name)}</h4>
         <p class="meta">时长：${a.durationMinutes || a.duration} · ${a.fileSize || '180 MB'}</p>
         <p class="meta" style="color:#2563eb">来源：${a.source || '素材库'}</p>
-        <div class="ops-video-card-actions">
+      <div class="ops-video-card-actions">
           <button type="button" onclick="previewVideoWithMinutes(${a.id})">预览视频</button>
           <button class="primary" type="button" onclick="selectVideoForRoom(${a.id})">选择此视频</button>
         </div>
@@ -1351,12 +1486,23 @@ function renderVideoLibGridHtml(activeAssetId) {
 function handleModalLocalUpload(input, currentId) {
   const file = input.files && input.files[0];
   if (!file) return;
+  if (!file.type.startsWith('video/')) return toast('请选择有效的视频文件');
+  if (file.size > 2 * 1024 * 1024 * 1024) return toast('视频文件不能超过 2 GB');
   const form = new FormData();
   form.append('file', file);
   const endpoint = location.pathname.startsWith('/meiye/') ? '/meiye/api/admin/media' : '/api/admin/media';
-  fetch(endpoint, {method: 'POST', headers: csrfHeaders(), credentials: 'same-origin', body: form})
+  const uploadStatus = document.createElement('p');
+  uploadStatus.className = 'ops-upload-status';
+  uploadStatus.setAttribute('role', 'status');
+  uploadStatus.textContent = `正在上传 ${file.name}（${(file.size / 1048576).toFixed(1)} MB）…`;
+  $('#opsVideoLibGrid')?.prepend(uploadStatus);
+  csrfHeaders().then(headers => fetch(endpoint, {method: 'POST', headers, credentials: 'same-origin', body: form}))
     .then(async response => {
-      if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) { const body = await response.json().catch(() => ({})); throw new Error(body.message || (response.status === 401 || response.status === 403 || response.redirected ? '请先登录管理后台' : 'COS 上传失败')); }
+      if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) {
+        const body = await response.json().catch(() => ({}));
+        const reason = response.status === 413 ? '服务器上传限制已拦截文件，请稍后重试或联系管理员' : response.status === 401 || response.status === 403 || response.redirected ? '请先登录管理后台' : body.message || `COS 上传失败（HTTP ${response.status}）`;
+        throw new Error(reason);
+      }
       return response.json();
     })
     .then(item => loadServerMedia().then(() => {
@@ -1364,7 +1510,11 @@ function handleModalLocalUpload(input, currentId) {
       if (asset) selectVideoForRoom(asset.id);
       toast(`已上传到腾讯云 COS：${item.name}`);
     }))
-    .catch(error => toast(error.message));
+    .catch(error => {
+      const status = $('#opsVideoLibGrid .ops-upload-status');
+      if (status) status.textContent = error.message;
+      toast(error.message);
+    });
 }
 
 function previewVideoWithMinutes(assetId) {
@@ -1424,9 +1574,9 @@ function openCosSettingsModal() {
         </div>
       </div>
 
-      <div class="field"><label>Bucket</label><input readonly value="meiye-live-media-1344161993"></div>
+      <div class="field"><label>Bucket</label><input readonly value="anchor-1359244810"></div>
       <div class="field"><label>地域</label><input readonly value="ap-guangzhou"></div>
-      <p class="ops-note" style="margin-top:10px">上传由管理后台转发到私有 COS。服务器需配置 COS_BUCKET、COS_REGION、COS_SECRET_ID、COS_SECRET_KEY 环境变量。</p>
+      <p class="ops-note" style="margin-top:10px">上传由服务器转发到私有 COS。素材库只展示通过此后台上传登记的视频；桶内手动上传的文件不会自动出现在列表。</p>
 
         <div class="dialog-foot" style="margin-top:16px">
           <button type="button" onclick="closeDialog()">取消</button>
@@ -1438,9 +1588,131 @@ function openCosSettingsModal() {
 
 function saveCosSettings() { toast('COS 凭证必须通过服务器环境变量配置'); }
 
+
 /* ==========================================================================
-   图九、图十一：场次表单重构 (录播记忆/循环/弹幕跟随 + 直播专属封面/背景与五项开关)
+   旗慧美业高保真：场次编辑弹窗、直播设置弹窗、直播间列表与企业级工作台
    ========================================================================== */
+
+function formatDisplayTime(val, fallback = '2026-10-24 16:15:58') {
+  if (!val || val === '—' || val === '-') return val || '—';
+  let s = String(val).trim().replace('T', ' ');
+  if (/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}$/.test(s)) {
+    s += ':00';
+  }
+  return s || fallback;
+}
+
+function syncRoomModeFields(mode) {
+  $$('#roomOperationsForm [data-room-mode]').forEach(sec => {
+    const target = sec.getAttribute('data-room-mode');
+    if (target === '伪直播（录播播放）') {
+      sec.hidden = !String(mode).startsWith('伪直播');
+    } else {
+      sec.hidden = target !== mode;
+    }
+  });
+}
+
+function stepHeatValue(delta) {
+  const input = $('#qihuiHeatInput');
+  if (!input) return;
+  const current = Number(input.value) || 0;
+  input.value = Math.max(0, current + delta);
+}
+
+function renderQihuiLiveSettingsBlock(r = {}) {
+  const defaultNotice = '系统提示:欢迎来到直播间!本平台提倡文明、健康、绿色的直播环境，严禁传播违法违规、低俗色情、暴力恐怖等内容。请理性消费，注意个人信息与财产安全。';
+  const switches = [
+    { name: 'replayEnabled', label: '回放', checked: r.replayEnabled !== false },
+    { name: 'giftEnabled', label: '礼物', checked: Boolean(r.giftEnabled) },
+    { name: 'onlineCountEnabled', label: '在线人数', checked: Boolean(r.onlineCountEnabled) },
+    { name: 'showCumulative', label: '累计人数', checked: r.showCumulative !== false },
+    { name: 'heatEnabled', label: '火力值', checked: Boolean(r.heatEnabled) },
+    { name: 'connectEnabled', label: '连麦', checked: Boolean(r.connectEnabled) },
+    { name: 'allowChat', label: '允许聊天', checked: r.allowChat !== false },
+    { name: 'showHome', label: '显示首页', checked: r.showHome !== false }
+  ];
+
+  return `
+    <!-- 观看时长奖励卡片 -->
+    <div class="qihui-reward-card">
+      <div class="qihui-reward-head">
+        <b>观看时长奖励</b>
+        <label class="qihui-switch with-text">
+          <input type="checkbox" name="watchRewardEnabled" ${r.watchRewardEnabled ? 'checked' : ''} onchange="updateQihuiSwitchText(this)">
+          <span class="qihui-slider"></span>
+          <span class="qihui-switch-text">${r.watchRewardEnabled ? '开' : '关'}</span>
+        </label>
+      </div>
+      <p class="qihui-reward-desc">
+        观众达标后自动到账，可分别设置本场一次或每满指定时长奖励一次；暂停、离开或直播结束时停止计时。红包和余额均存入商城余额。
+      </p>
+    </div>
+
+    <!-- 直播设置 -->
+    <section class="qihui-modal-section">
+      <div class="qihui-section-header">
+        <span class="qihui-section-bar"></span>
+        <h4>直播设置</h4>
+      </div>
+      <div class="qihui-form-rows">
+        <div class="qihui-form-row">
+          <label class="qihui-row-label">观看密码</label>
+          <div class="qihui-row-control">
+            <input type="text" name="watchPassword" value="${E(r.watchPassword || '')}" placeholder="留空则无需密码" style="max-width:340px">
+          </div>
+        </div>
+        <div class="qihui-form-row">
+          <label class="qihui-row-label">火力值</label>
+          <div class="qihui-row-control">
+            <div class="qihui-stepper">
+              <button type="button" class="qihui-stepper-btn" onclick="stepHeatValue(-1)" aria-label="减少火力值">−</button>
+              <input type="number" id="qihuiHeatInput" name="heatValue" min="0" value="${Number(r.heatValue ?? r.likes ?? 0)}">
+              <button type="button" class="qihui-stepper-btn" onclick="stepHeatValue(1)" aria-label="增加火力值">+</button>
+            </div>
+          </div>
+        </div>
+        <div class="qihui-form-row align-top">
+          <label class="qihui-row-label">分享介绍</label>
+          <div class="qihui-row-control">
+            <textarea name="shareIntro" rows="3" placeholder="请输入分享介绍">${E(r.shareIntro || '')}</textarea>
+          </div>
+        </div>
+        <div class="qihui-form-row align-top">
+          <label class="qihui-row-label">公告</label>
+          <div class="qihui-row-control">
+            <textarea name="systemNotice" rows="3" placeholder="请输入直播间系统提示">${E(r.systemNotice || defaultNotice)}</textarea>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 功能开关 (对齐旗慧美业 4×2 简洁布局) -->
+    <section class="qihui-modal-section">
+      <div class="qihui-section-header">
+        <span class="qihui-section-bar"></span>
+        <h4>功能开关</h4>
+      </div>
+      <div class="qihui-func-switches-grid">
+        ${switches.map(sw => `
+          <div class="qihui-func-switch-cell">
+            <span class="qihui-func-switch-label">${sw.label}</span>
+            <label class="qihui-switch">
+              <input type="checkbox" name="${sw.name}" ${sw.checked ? 'checked' : ''}>
+              <span class="qihui-slider"></span>
+            </label>
+          </div>
+        `).join('')}
+      </div>
+      <p class="qihui-func-hint">关闭后，观众端直播间内不显示「首页」入口（适用于分享扫码等场景）</p>
+    </section>
+  `;
+}
+
+function updateQihuiSwitchText(checkbox) {
+  const txt = checkbox.parentElement?.querySelector('.qihui-switch-text');
+  if (txt) txt.textContent = checkbox.checked ? '开' : '关';
+}
 
 function roomForm(r = {}, assetId) {
   const isEdit = Boolean(r.id);
@@ -1448,224 +1720,202 @@ function roomForm(r = {}, assetId) {
   const mode = r.mode || '录播';
   const selectedAsset = db.assets.find(a => a.id === Number(assetId || r.asset)) || db.assets[0];
   const isCurrentlyPlaying = isEdit && Boolean(r.status === '直播中');
+  const startVal = (r.time || formatLocalDateTime(new Date(Date.now() + 300000))).replace(' ', 'T').slice(0, 16);
 
   return `
-  <form id="roomOperationsForm" onsubmit="submitRoomOperations(event, ${isEdit ? Number(r.id) : 0}, ${Number(roomKey)})">
-    <div class="ops-room-form">
-      <!-- 基础信息 -->
-      <section class="ops-form-section">
-        <h3>场次基础信息</h3>
-        <div class="field">
-          <label for="ops-room-name">场次标题</label>
-          <input id="ops-room-name" name="name" required maxlength="60" value="${E(r.name || (selectedAsset?.name ? selectedAsset.name.replace(/\.[^.]+$/, '') : '美业精品课录播'))}">
+  <form id="roomOperationsForm" class="qihui-edit-room-form" onsubmit="submitRoomOperations(event, ${isEdit ? Number(r.id) : 0}, ${Number(roomKey)})">
+    <div class="qihui-modal-body">
+      <!-- 基本信息 -->
+      <section class="qihui-modal-section">
+        <div class="qihui-section-header">
+          <span class="qihui-section-bar"></span>
+          <h4>基本信息</h4>
         </div>
-        <div class="ops-form-grid">
-          <div class="field">
-            <label for="ops-room-mode">播放模式</label>
-            <select id="ops-room-mode" name="mode" onchange="syncRoomModeFields(this.value)">
-              <option value="录播" ${mode === '录播' ? 'selected' : ''}>录播（主要放视频）</option>
-              <option value="直播" ${mode === '直播' ? 'selected' : ''}>直播（实时推流）</option>
-              <option value="伪直播（录播播放）" ${mode.startsWith('伪直播') ? 'selected' : ''}>定时伪直播</option>
-            </select>
+        <div class="qihui-form-rows">
+          <div class="qihui-form-row">
+            <label class="qihui-row-label" for="ops-room-name">直播间名称</label>
+            <div class="qihui-row-control">
+              <input id="ops-room-name" name="name" required maxlength="60" placeholder="请输入直播间名称" value="${E(r.name || (selectedAsset?.name ? selectedAsset.name.replace(/\.[^.]+$/, '') : '新客大单系统'))}">
+            </div>
           </div>
-          <div class="field">
-            <label for="ops-room-start">计划开始时间</label>
-            <input id="ops-room-start" name="time" type="datetime-local" required value="${E((r.time || localTime(Date.now() + 300000)).replace(' ', 'T'))}">
+          <div class="qihui-form-row">
+            <label class="qihui-row-label" for="ops-room-host">主播</label>
+            <div class="qihui-row-control" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <input id="ops-room-host" name="host" maxlength="30" placeholder="请输入主播名称" value="${E(r.host || '优润诗直播')}">
+              <select id="ops-room-mode" name="mode" onchange="syncRoomModeFields(this.value)">
+                <option value="录播" ${mode === '录播' ? 'selected' : ''}>录播（视频回放/录播课）</option>
+                <option value="直播" ${mode === '直播' ? 'selected' : ''}>直播（实时推流）</option>
+                <option value="伪直播（录播播放）" ${mode.startsWith('伪直播') ? 'selected' : ''}>定时伪直播</option>
+              </select>
+            </div>
           </div>
-        </div>
-      </section>
-
-      <!-- 录播专用设置：视频素材库选择 + 记忆播放 + 循环播放 + 评论跟随循环 -->
-      <section class="ops-form-section" data-room-mode="录播" ${mode === '录播' ? '' : 'hidden'}>
-        <h3>录播视频素材</h3>
-        <input type="hidden" id="ops-selected-asset-id" name="asset" value="${selectedAsset ? selectedAsset.id : ''}">
-
-        <div id="ops-selected-video-display">
-          ${selectedAsset ? `
-            <div class="ops-selected-video-card">
-              <div class="ops-selected-thumb">
-                <video preload="metadata" src="${roomVideoUrl(selectedAsset)}"></video>
-              </div>
-              <div class="ops-selected-info">
-                <h4>${E(selectedAsset.name)}</h4>
-                <p>时长：<b class="duration-tag">${selectedAsset.duration} (${selectedAsset.durationMinutes || '分钟数'})</b> · 大小：${selectedAsset.fileSize || '185 MB'}</p>
-                <p style="color:#64748b">来源：${selectedAsset.source || '素材库'}</p>
-              </div>
-              <div style="display:flex;flex-direction:column;gap:6px">
-                <button type="button" onclick="previewVideoWithMinutes(${selectedAsset.id})">预览视频</button>
-                <button type="button" class="primary" onclick="openVideoLibraryModal(${selectedAsset.id})">切换视频</button>
+          <div class="qihui-form-row">
+            <label class="qihui-row-label" for="ops-room-start">开播时间</label>
+            <div class="qihui-row-control" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <input id="ops-room-start" name="time" type="datetime-local" required value="${E(startVal)}">
+              <div style="display:flex;align-items:center;gap:12px">
+                <span style="font-size:12px;color:#606266">展示样式：</span>
+                <select name="layout" style="flex:1">
+                  <option value="竖屏" ${(r.layout || '竖屏') === '竖屏' ? 'selected' : ''}>竖屏</option>
+                  <option value="横屏" ${r.layout === '横屏' ? 'selected' : ''}>横屏</option>
+                </select>
               </div>
             </div>
-          ` : `
-            <div style="padding:16px;text-align:center;border:1px dashed #cbd5e1;border-radius:6px;margin-bottom:12px">
-              <button type="button" class="primary" onclick="openVideoLibraryModal()">📂 从视频库/文件夹选择录播视频</button>
-            </div>
-          `}
-        </div>
-
-        <div class="ops-video-actions-bar">
-          <button type="button" class="ops-action-btn primary-outline" onclick="openVideoLibraryModal(${selectedAsset?.id || 0})">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-            <span>从视频文件素材库选择视频</span>
-          </button>
-          <label class="ops-action-btn secondary-btn" style="cursor:pointer;margin:0">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-            <span>本地上传视频</span>
-            <input type="file" accept="video/mp4,video/*" style="display:none" onchange="handleModalLocalUpload(this, ${selectedAsset?.id || 0})">
-          </label>
-        </div>
-
-        <!-- 录播三大播放设置 (高保真卡片化，彻底杜绝原生复选框变形) -->
-        <div class="ops-toggle-list">
-          <!-- 1. 记忆播放 -->
-          <div class="ops-toggle-card ${r.rememberPlayback !== false ? 'active' : ''}">
-            <div class="ops-toggle-info">
-              <div class="ops-toggle-title">
-                <b>记忆播放</b>
-                <span class="ops-toggle-status ${r.rememberPlayback !== false ? 'on' : 'off'}">${r.rememberPlayback !== false ? '已开启' : '已关闭'}</span>
-              </div>
-              <p class="ops-toggle-desc">开启后，同一账号在同一设备再次进入本场录播，将从上次观看位置继续播放。如果是首次进入，则从第一秒开始播放。</p>
-            </div>
-            <label class="ios-switch">
-              <input type="checkbox" name="rememberPlayback" ${r.rememberPlayback !== false ? 'checked' : ''} onchange="updateOpsToggleCard(this)">
-              <span class="slider"></span>
-            </label>
-          </div>
-
-          <!-- 2. 循环播放 -->
-          <div class="ops-toggle-card ${r.loopPlayback ? 'active' : ''}">
-            <div class="ops-toggle-info">
-              <div class="ops-toggle-title">
-                <b>循环播放</b>
-                <span class="ops-toggle-status ${r.loopPlayback ? 'on' : 'off'}">${r.loopPlayback ? '已开启' : '已关闭'}</span>
-              </div>
-              <p class="ops-toggle-desc">开启后，视频播完全部内容后将自动从头循环播放；关闭则停留在播放结束状态。</p>
-            </div>
-            <label class="ios-switch">
-              <input type="checkbox" name="loopPlayback" ${r.loopPlayback ? 'checked' : ''} onchange="updateOpsToggleCard(this)">
-              <span class="slider"></span>
-            </label>
-          </div>
-
-          <!-- 3. 评论跟随循环 -->
-          <div class="ops-toggle-card ${r.commentFollowLoop ? 'active' : ''} ${isCurrentlyPlaying ? 'disabled' : ''}">
-            <div class="ops-toggle-info">
-              <div class="ops-toggle-title">
-                <b>评论跟随循环</b>
-                <span class="ops-toggle-status ${isCurrentlyPlaying ? 'locked' : (r.commentFollowLoop ? 'on' : 'off')}">${isCurrentlyPlaying ? '开播已锁定' : (r.commentFollowLoop ? '已开启' : '已关闭')}</span>
-              </div>
-              <p class="ops-toggle-desc">${isCurrentlyPlaying ? '本场已开始播放，设置已被锁定，开播后不可修改。' : '每轮循环按原视频时间点同步展示已审核评论弹幕，不重复计数；开播后不可修改。'}</p>
-            </div>
-            <label class="ios-switch">
-              <input type="checkbox" name="commentFollowLoop" ${r.commentFollowLoop ? 'checked' : ''} ${isCurrentlyPlaying ? 'disabled' : ''} onchange="updateOpsToggleCard(this)">
-              <span class="slider"></span>
-            </label>
           </div>
         </div>
-      </section>
 
-      <!-- 直播专用设置 (图九、图十一：封面图+背景图 + 仅回放、连麦、累计人数、允许聊天、显示首页五项) -->
-      <section class="ops-form-section" data-room-mode="直播" ${mode === '直播' ? '' : 'hidden'}>
-        <h3>直播间素材 (封面图 + 背景图)</h3>
-        <div class="ops-image-grid">
-          <div class="ops-image-field">
-            <div class="ops-image-header">
-              <label>直播封面图</label>
-              <label class="button ops-file-button">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
-                更换封面
-                <input type="file" accept="image/*" style="display:none" onchange="attachRoomImage('cover', this)">
+        <!-- 录播视频素材与播放策略 -->
+        <div data-room-mode="录播" ${mode === '录播' ? '' : 'hidden'} style="margin-top:14px">
+          <input type="hidden" id="ops-selected-asset-id" name="asset" value="${selectedAsset ? selectedAsset.id : ''}">
+          <div id="ops-selected-video-display">
+            ${selectedAsset ? `
+              <div class="ops-selected-video-card">
+                <div class="ops-selected-thumb">
+                  <video preload="metadata" src="${roomVideoUrl(selectedAsset)}"></video>
+                </div>
+                <div class="ops-selected-info">
+                  <h4>${E(selectedAsset.name)}</h4>
+                  <p>时长：<b class="duration-tag">${selectedAsset.duration} (${selectedAsset.durationMinutes || '分钟数'})</b> · 大小：${selectedAsset.fileSize || '185 MB'}</p>
+                  <p style="color:#64748b">来源：${selectedAsset.source || '素材库'}</p>
+                </div>
+                <div style="display:flex;gap:8px">
+                  <button type="button" class="qihui-btn-plain small-btn" onclick="previewVideoWithMinutes(${selectedAsset.id})">预览</button>
+                  <button type="button" class="qihui-btn search small-btn" onclick="openVideoLibraryModal(${selectedAsset.id})">更换视频</button>
+                </div>
+              </div>
+            ` : ''}
+          </div>
+          <div class="qihui-replay-switches-row">
+            <label class="qihui-inline-switch-item">
+              <span>记忆播放</span>
+              <label class="qihui-switch">
+                <input type="checkbox" name="rememberPlayback" ${r.rememberPlayback !== false ? 'checked' : ''}>
+                <span class="qihui-slider"></span>
               </label>
-            </div>
-            <div class="ops-thumb-container">
-              <img id="room-cover-preview" src="${E(roomPosterUrl(r))}" alt="直播封面预览">
-              <span id="room-cover-note" class="ops-thumb-tag">${opsImageUrls.has(`${roomKey}:cover`) ? '已选本地图片' : '默认直播封面'}</span>
-            </div>
-          </div>
-          <div class="ops-image-field">
-            <div class="ops-image-header">
-              <label>直播背景图</label>
-              <label class="button ops-file-button">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
-                更换背景
-                <input type="file" accept="image/*" style="display:none" onchange="attachRoomImage('background', this)">
+            </label>
+            <label class="qihui-inline-switch-item">
+              <span>循环播放</span>
+              <label class="qihui-switch">
+                <input type="checkbox" name="loopPlayback" ${r.loopPlayback ? 'checked' : ''}>
+                <span class="qihui-slider"></span>
               </label>
-            </div>
-            <div class="ops-thumb-container">
-              <img id="room-background-preview" src="${E(roomBackgroundUrl(r) || 'assets/live-still.png')}" alt="直播背景预览">
-              <span id="room-background-note" class="ops-thumb-tag">${roomBackgroundUrl(r) ? '已配置背景' : '未选择背景'}</span>
-            </div>
+            </label>
+            <label class="qihui-inline-switch-item" title="${isCurrentlyPlaying ? '开播后不可修改' : '每轮循环同步展示评论弹幕'}">
+              <span>评论跟随循环 ${isCurrentlyPlaying ? '<small style="color:#d97706">(已锁)</small>' : ''}</span>
+              <label class="qihui-switch">
+                <input type="checkbox" name="commentFollowLoop" ${r.commentFollowLoop ? 'checked' : ''} ${isCurrentlyPlaying ? 'disabled' : ''}>
+                <span class="qihui-slider"></span>
+              </label>
+            </label>
           </div>
         </div>
 
-        <h3 style="margin-top:18px">直播间设置</h3>
-        <p class="ops-note" style="margin-bottom:8px">精确控制直播间关键功能入口与互动状态：</p>
-        <div class="ops-live-five-switches">
-          <label>
-            <input type="checkbox" name="replayEnabled" ${r.replayEnabled !== false ? 'checked' : ''}>
-            <span>回放</span>
-          </label>
-          <label>
-            <input type="checkbox" name="connectEnabled" ${r.connectEnabled ? 'checked' : ''}>
-            <span>连麦</span>
-          </label>
-          <label>
-            <input type="checkbox" name="showCumulative" ${r.showCumulative !== false ? 'checked' : ''}>
-            <span>累计人数</span>
-          </label>
-          <label>
-            <input type="checkbox" name="allowChat" ${r.allowChat !== false ? 'checked' : ''}>
-            <span>允许聊天</span>
-          </label>
-          <label>
-            <input type="checkbox" name="showHome" ${r.showHome !== false ? 'checked' : ''}>
-            <span>显示首页</span>
-          </label>
+        <!-- 直播封面与背景图 -->
+        <div data-room-mode="直播" ${mode === '直播' ? '' : 'hidden'} style="margin-top:14px">
+          <div class="ops-image-grid">
+            <div class="ops-image-field">
+              <div class="ops-image-header">
+                <label>直播封面图</label>
+                <label class="button ops-file-button">
+                  更换封面
+                  <input type="file" accept="image/*" style="display:none" onchange="attachRoomImage('cover', this)">
+                </label>
+              </div>
+              <div class="ops-thumb-container">
+                <img id="room-cover-preview" src="${E(roomPosterUrl(r))}" alt="直播封面预览">
+                <span id="room-cover-note" class="ops-thumb-tag">${opsImageAssetIds.has(`${roomKey}:cover`) ? '已上传到 COS' : roomPosterUrl(r) !== 'assets/live-still.png' ? '已关联封面' : '默认封面'}</span>
+              </div>
+            </div>
+            <div class="ops-image-field">
+              <div class="ops-image-header">
+                <label>直播背景图</label>
+                <label class="button ops-file-button">
+                  更换背景
+                  <input type="file" accept="image/*" style="display:none" onchange="attachRoomImage('background', this)">
+                </label>
+              </div>
+              <div class="ops-thumb-container">
+                <img id="room-background-preview" src="${E(roomBackgroundUrl(r) || 'assets/live-still.png')}" alt="直播背景预览">
+                <span id="room-background-note" class="ops-thumb-tag">${roomBackgroundUrl(r) ? '已配置背景' : '默认背景'}</span>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
-      <!-- 定时伪直播 -->
-      <section class="ops-form-section" data-room-mode="伪直播（录播播放）" ${mode.startsWith('伪直播') ? '' : 'hidden'}>
-        <h3>定时录播素材</h3>
-        <p class="ops-note">全员同一排期统一进度播放录播视频。</p>
-      </section>
+      ${renderQihuiLiveSettingsBlock(r)}
     </div>
 
-    <div class="dialog-foot">
-      <button type="button" onclick="closeDialog()">取消</button>
-      <button class="primary" type="submit">${isEdit ? '保存设置' : '创建场次'}</button>
+    <div class="qihui-modal-footer">
+      <button type="button" class="qihui-btn-cancel" onclick="closeDialog()">取消</button>
+      <button type="submit" class="qihui-btn-submit">提交</button>
     </div>
   </form>`;
 }
 
-function submitRoomOperations(event, editId, roomIdValue) {
+async function submitRoomOperations(event, editId, roomIdValue) {
   event.preventDefault();
   const form = event.currentTarget;
   const data = new FormData(form);
   const name = String(data.get('name') || '').trim();
+  const host = String(data.get('host') || '优润诗直播').trim() || '优润诗直播';
   const mode = String(data.get('mode') || '录播');
+  const layout = String(data.get('layout') || '竖屏');
 
-  if (!name) return toast('请输入场次标题');
+  if (!name) return toast('请输入直播间名称');
+  const imageKey = `${editId || roomIdValue}:cover`;
+  const posterAssetId = opsImageAssetIds.get(imageKey) || opsImageAssetIds.get(`${pendingRoomId}:cover`);
+  if (posterAssetId && editId) {
+    try {
+      const headers = await csrfHeaders();
+      headers.set('Content-Type', 'application/json');
+      const response = await fetch(adminApiPath(`/api/admin/rooms/${editId}/poster`), {
+        method: 'POST', credentials: 'same-origin', headers,
+        body: JSON.stringify({ mediaAssetId: posterAssetId })
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.message || '封面同步到场次失败');
+      }
+      const persistedUrl = adminApiPath(`/api/rooms/${editId}/poster`);
+      opsImageUrls.set(imageKey, persistedUrl);
+    } catch (error) {
+      toast(error.message || '封面同步失败，请重试');
+      return;
+    }
+  }
   const assetId = Number(data.get('asset')) || db.assets[0]?.id || 1;
   const start = data.get('time');
 
   let target = editId ? db.rooms.find(r => r.id === editId) : null;
   const id = editId || roomIdValue;
   const isCurrentlyPlaying = target && target.status === '直播中';
+  const formattedTime = start ? formatDisplayTime(start) : formatLocalDateTime(new Date());
 
   const updates = {
     name,
+    host,
     mode,
+    layout,
     asset: assetId,
-    time: start ? start.replace('T', ' ') : localTime(Date.now()),
+    time: formattedTime,
+    watchPassword: String(data.get('watchPassword') || '').trim(),
+    heatValue: Math.max(0, Number(data.get('heatValue')) || 0),
+    likes: Math.max(0, Number(data.get('heatValue')) || 0),
+    shareIntro: String(data.get('shareIntro') || '').trim(),
+    systemNotice: String(data.get('systemNotice') || '').trim(),
+    watchRewardEnabled: data.has('watchRewardEnabled'),
     // 录播三大设置
     rememberPlayback: data.has('rememberPlayback'),
     loopPlayback: data.has('loopPlayback'),
     commentFollowLoop: isCurrentlyPlaying ? target.commentFollowLoop : data.has('commentFollowLoop'),
-    // 直播五大设置
+    // 功能开关（8项）
     replayEnabled: data.has('replayEnabled'),
-    connectEnabled: data.has('connectEnabled'),
+    giftEnabled: data.has('giftEnabled'),
+    onlineCountEnabled: data.has('onlineCountEnabled'),
     showCumulative: data.has('showCumulative'),
+    heatEnabled: data.has('heatEnabled'),
+    connectEnabled: data.has('connectEnabled'),
     allowChat: data.has('allowChat'),
     showHome: data.has('showHome')
   };
@@ -1676,169 +1926,106 @@ function submitRoomOperations(event, editId, roomIdValue) {
     target = {
       ...updates,
       id,
-      status: mode === '录播' ? '已发布' : '待开播',
-      goods: [],
-      likes: 0,
+      status: mode === '录播' ? '直播中' : '待开播',
+      end: '—',
+      createdAt: formatLocalDateTime(new Date()),
+      showInList: true,
+      goods: [1, 2],
       onlineCount: 1,
       totalAudience: 5,
       replayPublished: true
     };
+    target.cover = getQihuiRoomPosterSvg(target);
     db.rooms.unshift(target);
   }
 
-  // 绑定封面与背景图
   for (const key of ['cover', 'background']) {
     const url = opsImageUrls.get(`${id}:${key}`) || opsImageUrls.get(`${pendingRoomId}:${key}`);
-    if (url) opsImageUrls.set(`${id}:${key}`, url);
+    if (url) {
+      opsImageUrls.set(`${id}:${key}`, url);
+      if (key === 'cover') target.cover = url;
+    }
   }
 
   pendingRoomId = null;
   persist();
   closeDialog();
   render();
-  toast(editId ? '场次设置已更新！' : '新场次已成功创建！');
+  toast(editId ? `直播间【${target.name}】设置已提交保存` : `已创建直播间【${target.name}】`);
 }
 
-// 覆盖入口
-newLive = function(assetId) {
-  pendingRoomId = uid();
-  const r = assetId ? db.assets.find(a => a.id === Number(assetId)) : null;
-  modal('创建直播/录播场次', roomForm({ id: 0, mode: '录播', time: localTime(Date.now() + 300000), asset: r?.id }, r?.id));
-};
-
-// 本地图片选取与预览更新 (修复图一)
-function attachRoomImage(type, input) {
-  const file = input.files && input.files[0];
-  if (!file) return;
-  if (!file.type.startsWith('image/')) return toast('请选择有效的图片文件');
-  const url = URL.createObjectURL(file);
-  const roomKey = pendingRoomId || (room() ? room().id : 1);
-  opsImageUrls.set(`${roomKey}:${type}`, url);
-  const imgEl = $(`#room-${type}-preview`);
-  if (imgEl) imgEl.src = url;
-  const noteEl = $(`#room-${type}-note`);
-  if (noteEl) noteEl.textContent = '已选择本地图片';
-  toast(`已选择${type === 'cover' ? '封面' : '背景'}图片：${file.name}`);
-}
-
-// 图二高保真：直播设置专属弹窗 (Live Settings Modal)
-function openLiveSettingsModal(roomId) {
-  const r = db.rooms.find(x => x.id === Number(roomId)) || room() || db.rooms[0];
-  modal('直播设置', `
-    <div class="live-settings-dialog">
-      <div class="live-settings-subhead">
-        <span>开关变更后将同步至观众和主播直播间</span>
-        <button type="button" class="live-settings-expand-btn" title="全屏" onclick="toggleLccFullscreen()">
+function showQihuiModal(titleText, bodyHtml) {
+  const dlg = $('#dialog');
+  dlg.classList.add('qihui-dialog');
+  dlg.innerHTML = `
+    <div class="qihui-dialog-head">
+      <h2>${E(titleText)}</h2>
+      <div class="qihui-dialog-head-actions">
+        <button type="button" class="qihui-dialog-icon-btn" onclick="toggleLccFullscreen()" title="全屏切换" aria-label="全屏">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
         </button>
+        <button type="button" class="qihui-dialog-icon-btn" onclick="closeDialog()" title="关闭" aria-label="关闭">×</button>
       </div>
-
-      <form onsubmit="saveLiveSettingsModal(event, ${r.id})">
-        <div class="live-settings-switches-grid">
-          <!-- 1. 回放 (蓝框) -->
-          <div class="live-setting-item blue ${r.replayEnabled !== false ? 'active' : ''}">
-            <span class="setting-name">回放</span>
-            <label class="ios-switch">
-              <input type="checkbox" name="replayEnabled" ${r.replayEnabled !== false ? 'checked' : ''} onchange="updateSwitchLabel(this)">
-              <span class="slider"></span>
-              <span class="switch-state-text">${r.replayEnabled !== false ? '开' : '关'}</span>
-            </label>
-          </div>
-
-          <!-- 2. 礼物 (粉框) -->
-          <div class="live-setting-item pink ${r.giftEnabled ? 'active' : ''}">
-            <span class="setting-name">礼物</span>
-            <label class="ios-switch">
-              <input type="checkbox" name="giftEnabled" ${r.giftEnabled ? 'checked' : ''} onchange="updateSwitchLabel(this)">
-              <span class="slider"></span>
-              <span class="switch-state-text">${r.giftEnabled ? '开' : '关'}</span>
-            </label>
-          </div>
-
-          <!-- 3. 在线人数 (紫框) -->
-          <div class="live-setting-item purple ${r.onlineCountEnabled ? 'active' : ''}">
-            <span class="setting-name">在线人数</span>
-            <label class="ios-switch">
-              <input type="checkbox" name="onlineCountEnabled" ${r.onlineCountEnabled ? 'checked' : ''} onchange="updateSwitchLabel(this)">
-              <span class="slider"></span>
-              <span class="switch-state-text">${r.onlineCountEnabled ? '开' : '关'}</span>
-            </label>
-          </div>
-
-          <!-- 4. 累计人数 (青蓝框) -->
-          <div class="live-setting-item cyan ${r.showCumulative !== false ? 'active' : ''}">
-            <span class="setting-name">累计人数</span>
-            <label class="ios-switch">
-              <input type="checkbox" name="showCumulative" ${r.showCumulative !== false ? 'checked' : ''} onchange="updateSwitchLabel(this)">
-              <span class="slider"></span>
-              <span class="switch-state-text">${r.showCumulative !== false ? '开' : '关'}</span>
-            </label>
-          </div>
-
-          <!-- 5. 火力值 (暗黑框) -->
-          <div class="live-setting-item dark ${r.heatEnabled ? 'active' : ''}">
-            <span class="setting-name">火力值</span>
-            <label class="ios-switch">
-              <input type="checkbox" name="heatEnabled" ${r.heatEnabled ? 'checked' : ''} onchange="updateSwitchLabel(this)">
-              <span class="slider"></span>
-              <span class="switch-state-text">${r.heatEnabled ? '开' : '关'}</span>
-            </label>
-          </div>
-
-          <!-- 6. 连麦 (橙褐框) -->
-          <div class="live-setting-item orange ${r.connectEnabled ? 'active' : ''}">
-            <span class="setting-name">连麦</span>
-            <label class="ios-switch">
-              <input type="checkbox" name="connectEnabled" ${r.connectEnabled ? 'checked' : ''} onchange="updateSwitchLabel(this)">
-              <span class="slider"></span>
-              <span class="switch-state-text">${r.connectEnabled ? '开' : '关'}</span>
-            </label>
-          </div>
-
-          <!-- 7. 允许聊天 (绿框) -->
-          <div class="live-setting-item green ${r.allowChat !== false ? 'active' : ''}">
-            <span class="setting-name">允许聊天</span>
-            <label class="ios-switch">
-              <input type="checkbox" name="allowChat" ${r.allowChat !== false ? 'checked' : ''} onchange="updateSwitchLabel(this)">
-              <span class="slider"></span>
-              <span class="switch-state-text">${r.allowChat !== false ? '开' : '关'}</span>
-            </label>
-          </div>
-        </div>
-
-        <!-- 底部全宽卡片：观看时长奖励 (Image 4) -->
-        <div class="live-setting-reward-box ${r.watchRewardEnabled ? 'active' : ''}">
-          <div class="reward-box-header">
-            <b>观看时长奖励</b>
-            <label class="ios-switch">
-              <input type="checkbox" name="watchRewardEnabled" ${r.watchRewardEnabled ? 'checked' : ''} onchange="updateSwitchLabel(this)">
-              <span class="slider"></span>
-              <span class="switch-state-text">${r.watchRewardEnabled ? '开' : '关'}</span>
-            </label>
-          </div>
-          <p class="reward-box-desc">
-            观众达标后自动到账，可分别设置本场一次或每满指定时长奖励一次；暂停、离开或直播结束时停止计时。红包和余额均存入商城余额。
-          </p>
-        </div>
-
-        <div class="live-settings-footer">
-          <button type="button" class="live-settings-cancel" onclick="closeDialog()">取消</button>
-          <button type="submit" class="live-settings-save">保存</button>
-        </div>
-      </form>
     </div>
+    ${bodyHtml}
+  `;
+  if (!dlg.open) dlg.showModal();
+}
+
+// 覆盖入口：创建直播间
+newLive = function(assetId) {
+  location.href = adminApiPath('/admin/rooms/new');
+};
+
+// 本地图片选取与预览更新
+async function attachRoomImage(type, input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) return toast('封面仅支持 JPG、PNG 或 WebP 图片');
+  if (file.size > 10 * 1024 * 1024) return toast('封面图片不能超过 10 MB');
+  const previewUrl = URL.createObjectURL(file);
+  const roomKey = pendingRoomId || (room() ? room().id : 1);
+  const imageKey = `${roomKey}:${type}`;
+  const imgEl = $(`#room-${type}-preview`);
+  if (imgEl) imgEl.src = previewUrl;
+  const noteEl = $(`#room-${type}-note`);
+  if (noteEl) noteEl.textContent = '正在上传…';
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    const response = await fetch(adminApiPath('/api/admin/media/images'), {
+      method: 'POST', credentials: 'same-origin', headers: await csrfHeaders(), body: form
+    });
+    const asset = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(asset.message || '封面上传失败');
+    opsImageAssetIds.set(imageKey, Number(asset.id));
+    opsImageUrls.set(imageKey, asset.url);
+    if (noteEl) noteEl.textContent = '已上传到 COS';
+    toast(`封面已上传：${file.name}，保存场次后同步到小程序`);
+  } catch (error) {
+    if (noteEl) noteEl.textContent = '上传失败';
+    toast(error.message || '封面上传失败，请检查 COS 配置');
+  }
+}
+
+// 旗慧美业风格：直播设置弹窗（去除花哨彩框，采用与「编辑直播间」一致的清晰分组与 4×2 功能开关）
+function openLiveSettingsModal(roomId) {
+  const r = db.rooms.find(x => x.id === Number(roomId)) || room() || db.rooms[0];
+  showQihuiModal('直播设置', `
+    <form class="qihui-edit-room-form" onsubmit="saveLiveSettingsModal(event, ${r.id})">
+      <div class="qihui-modal-body">
+        ${renderQihuiLiveSettingsBlock(r)}
+      </div>
+      <div class="qihui-modal-footer">
+        <button type="button" class="qihui-btn-cancel" onclick="closeDialog()">取消</button>
+        <button type="submit" class="qihui-btn-submit">提交</button>
+      </div>
+    </form>
   `);
 }
 
 function updateSwitchLabel(checkbox) {
-  const item = checkbox.closest('.live-setting-item') || checkbox.closest('.live-setting-reward-box');
-  const labelSpan = checkbox.parentElement.querySelector('.switch-state-text');
-  if (labelSpan) {
-    labelSpan.textContent = checkbox.checked ? '开' : '关';
-  }
-  if (item) {
-    item.classList.toggle('active', checkbox.checked);
-  }
+  updateQihuiSwitchText(checkbox);
 }
 
 function updateOpsToggleCard(checkbox) {
@@ -1858,6 +2045,13 @@ function saveLiveSettingsModal(e, roomId) {
   const f = new FormData(e.currentTarget);
   const r = db.rooms.find(x => x.id === Number(roomId)) || room();
   if (r) {
+    r.watchPassword = String(f.get('watchPassword') || '').trim();
+    r.heatValue = Math.max(0, Number(f.get('heatValue')) || 0);
+    r.likes = r.heatValue;
+    r.shareIntro = String(f.get('shareIntro') || '').trim();
+    const notice = String(f.get('systemNotice') || '').trim();
+    if (notice) r.systemNotice = notice;
+    r.watchRewardEnabled = f.has('watchRewardEnabled');
     r.replayEnabled = f.has('replayEnabled');
     r.giftEnabled = f.has('giftEnabled');
     r.onlineCountEnabled = f.has('onlineCountEnabled');
@@ -1865,19 +2059,16 @@ function saveLiveSettingsModal(e, roomId) {
     r.heatEnabled = f.has('heatEnabled');
     r.connectEnabled = f.has('connectEnabled');
     r.allowChat = f.has('allowChat');
-    r.watchRewardEnabled = f.has('watchRewardEnabled');
+    r.showHome = f.has('showHome');
     persist();
   }
   closeDialog();
   render();
-  toast('直播设置已保存并同步至直播间！');
+  toast('直播间设置已保存并同步至观众端');
 }
 
 function editLiveRoom(id) {
-  pendingRoomId = Number(id);
-  const target = db.rooms.find(r => r.id === Number(id));
-  if (!target) return toast('场次不存在');
-  modal(`编辑场次 · ${target.name}`, roomForm(target, target.asset));
+  location.href = adminApiPath(`/admin/rooms/${Number(id)}/edit`);
 }
 
 function formatLocalDateTime(d = new Date()) {
@@ -1905,7 +2096,7 @@ function confirmCloseLiveRoom(id) {
   const r = db.rooms.find(x => x.id === Number(id));
   if (!r) return;
   activeMoreDropdownRoomId = null;
-  modal('关闭直播提示', `
+  showQihuiModal('关闭直播提示', `
     <div class="ops-confirm-modal-content">
       <div class="ops-confirm-header danger">
         <div class="ops-confirm-icon-box">
@@ -1922,61 +2113,60 @@ function confirmCloseLiveRoom(id) {
         <p>• <b>后台联动</b>：直播管理列表与中控台将实时更新状态为【已结束】，支持随时重新开启直播。</p>
       </div>
       <div class="ops-confirm-actions">
-        <button type="button" class="qihui-btn reset" onclick="closeDialog()">取消</button>
+        <button type="button" class="qihui-btn-cancel" onclick="closeDialog()">取消</button>
         <button type="button" class="qihui-btn danger-confirm" onclick="closeLiveRoom(${r.id})">确认关闭直播</button>
       </div>
     </div>
   `);
 }
 
-function closeLiveRoom(id) {
-  const r = db.rooms.find(x => x.id === Number(id));
+async function closeLiveRoom(id) {
+  const r = serverRooms.find(x => x.id === Number(id));
   if (!r) return;
-  r.status = '已结束';
-  r.end = formatLocalDateTime(new Date());
-  persist();
   try {
-    const headers = csrfHeaders();
+    const headers = await csrfHeaders();
     headers.set('Content-Type', 'application/json');
-    fetch(`/api/rooms/${r.id}/status`, {
+    const response = await fetch(adminApiPath(`/api/admin/rooms/${r.id}/status`), {
       method: 'POST',
-      headers: headers,
+      headers,
+      credentials: 'same-origin',
       body: JSON.stringify({ status: 'ENDED' })
-    }).catch(() => {});
-  } catch (e) {}
+    });
+    if (!response.ok) throw new Error('更新数据库场次状态失败');
+  } catch (e) { return toast(e.message || '更新失败，请重新登录后重试'); }
+  serverRoomsLoaded = false;
   activeMoreDropdownRoomId = null;
   closeDialog();
-  render();
-  toast(`直播间【${r.name}】已成功关闭！当前状态：【已结束】（结束时间：${r.end}）`);
+  await loadServerRooms();
+  toast(`直播间【${r.name}】已关闭`);
 }
 
-function startLiveRoom(id) {
-  const r = db.rooms.find(x => x.id === Number(id));
+async function startLiveRoom(id) {
+  const r = serverRooms.find(x => x.id === Number(id));
   if (!r) return;
-  r.status = '直播中';
-  r.time = formatLocalDateTime(new Date());
-  r.end = '—';
-  persist();
   try {
-    const headers = csrfHeaders();
+    const headers = await csrfHeaders();
     headers.set('Content-Type', 'application/json');
-    fetch(`/api/rooms/${r.id}/status`, {
+    const response = await fetch(adminApiPath(`/api/admin/rooms/${r.id}/status`), {
       method: 'POST',
-      headers: headers,
+      headers,
+      credentials: 'same-origin',
       body: JSON.stringify({ status: 'LIVE' })
-    }).catch(() => {});
-  } catch (e) {}
+    });
+    if (!response.ok) throw new Error('更新数据库场次状态失败');
+  } catch (e) { return toast(e.message || '更新失败，请重新登录后重试'); }
+  serverRoomsLoaded = false;
   activeMoreDropdownRoomId = null;
   closeDialog();
-  render();
-  toast(`直播间【${r.name}】已开启直播，当前状态：【直播中】！`);
+  await loadServerRooms();
+  toast(`直播间【${r.name}】已开启直播`);
 }
 
 function confirmDeleteLiveRoom(id) {
   const r = db.rooms.find(x => x.id === Number(id));
   if (!r) return;
   activeMoreDropdownRoomId = null;
-  modal('删除场次确认', `
+  showQihuiModal('删除场次确认', `
     <div class="ops-confirm-modal-content">
       <div class="ops-confirm-header danger">
         <div class="ops-confirm-icon-box">
@@ -1989,75 +2179,43 @@ function confirmDeleteLiveRoom(id) {
       </div>
       <p style="font-size:12px;color:#64748b;margin:12px 0 16px">删除后该场次记录将从列表中移除，请谨慎操作。</p>
       <div class="ops-confirm-actions">
-        <button type="button" class="qihui-btn reset" onclick="closeDialog()">取消</button>
+        <button type="button" class="qihui-btn-cancel" onclick="closeDialog()">取消</button>
         <button type="button" class="qihui-btn danger-confirm" onclick="deleteLiveRoom(${r.id})">确认删除</button>
       </div>
     </div>
   `);
 }
 
-function deleteLiveRoom(id) {
-  const idx = db.rooms.findIndex(x => x.id === Number(id));
-  if (idx !== -1) {
-    const removed = db.rooms.splice(idx, 1)[0];
-    persist();
-    closeDialog();
-    render();
-    toast(`已成功删除直播场次：【${removed.name}】`);
-  }
-}
+function deleteLiveRoom() { toast('场次有关联的互动和订单数据，请在数据库确认关联清理规则后再开放删除'); }
 
 function copyLiveRoom(id) {
-  const orig = db.rooms.find(r => r.id === Number(id));
-  if (!orig) return;
-  const newId = Math.max(...db.rooms.map(x => x.id)) + 1;
-  const cloned = {
-    ...structuredClone(orig),
-    id: newId,
-    name: `${orig.name} (复制)`,
-    time: formatLocalDateTime(new Date(Date.now() + 600000)),
-    end: '—',
-    status: '待开播',
-    createdAt: formatLocalDateTime(new Date())
-  };
-  db.rooms.unshift(cloned);
-  persist();
-  render();
-  toast(`已复制并生成新场次：【${cloned.name}】（ID：${newId}，状态：待开播）`);
+  toast('请通过创建场次表单录入真实场次信息');
 }
 
 function toggleRoomVisibility(id, checked) {
-  const r = db.rooms.find(x => x.id === Number(id));
-  if (r) {
-    r.showInList = checked;
-    persist();
-    toast(`直播间【${r.name}】已${checked ? '开启展示' : '隐藏'}`);
-  }
+  toast('场次展示状态尚未接入数据库字段');
 }
 
 function openPushPullModal(id) {
   const r = db.rooms.find(x => x.id === Number(id)) || room();
-  modal(`推拉流配置 · ${r.name}`, `
-    <div style="padding:4px">
+  showQihuiModal(`推拉流配置 · ${r.name}`, `
+    <div style="padding:4px 0">
       <p style="font-size:12px;color:#64748b;margin-bottom:14px">抖音 / 视频号 RTMP 推流尚未配置。平台推流地址与密钥需要保存在服务器环境变量中。</p>
-      
       <div class="field" style="margin-bottom:12px">
         <label style="font-size:12px;font-weight:600">RTMP 推流状态</label>
-        <input readonly value="未配置平台推流地址 / 密钥" style="width:100%;font-size:11px;background:#f8fafc">
+        <input readonly value="未配置平台推流地址 / 密钥" style="width:100%;font-size:12px;background:#f8fafc">
       </div>
-
-      <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:10px 14px;font-size:11px;color:#9a3412;margin-top:14px">
+      <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:10px 14px;font-size:12px;color:#9a3412;margin-top:14px">
         推流端还需接入 FFmpeg 循环视频与 Qwen 音频混流服务；当前页面不会伪造可用线路。
       </div>
-
-      <div class="dialog-foot" style="margin-top:16px">
-        <button type="button" class="primary" onclick="closeDialog()">关闭</button>
+      <div class="qihui-modal-footer" style="margin-top:18px">
+        <button type="button" class="qihui-btn-submit" onclick="closeDialog()">关闭</button>
       </div>
     </div>
   `);
 }
 
-// 统一映射：点击「直播设置」呼出图二专属面板
+// 统一映射：点击「直播设置」呼出直播设置弹窗
 liveSettings = function(id) {
   openLiveSettingsModal(id);
 };
@@ -2082,8 +2240,8 @@ miniWatch = function() {
             <h2 class="mini-ended-room-name">${E(r.name)}</h2>
             <div class="mini-ended-status-pill">本场直播已结束</div>
             <div class="mini-ended-time-info">
-              <div>开播时间：${E(r.time || '—')}</div>
-              <div>关播时间：${E(r.end || '已保存')}</div>
+              <div>开播时间：${E(formatDisplayTime(r.time))}</div>
+              <div>关播时间：${E(formatDisplayTime(r.end || '已保存'))}</div>
             </div>
             <div class="mini-ended-metrics-grid">
               <div class="mini-ended-metric">
@@ -2119,39 +2277,43 @@ miniWatch = function() {
   let html = baseMiniWatch();
   if (!r) return html;
 
-  // 1. 替换自定义封面与背景
   html = html.replace(/poster="[^"]*"/g, `poster="${E(roomPosterUrl(r))}"`);
+  const serverRoom = serverRooms.find(item => item.id === Number(r.id))?._server;
+  if (serverRoom) {
+    const playback = serverPlaybackByRoom.get(Number(r.id));
+    const poster = E(serverRoom.posterUrl || roomPosterUrl(r));
+    const visual = playback?.source
+      ? `<video class="mini-live-image room-replay-video" src="${E(playback.source)}" poster="${poster}" controls autoplay muted playsinline preload="auto" aria-label="${E(serverRoom.modeLabel || '直播')}视频" onerror="this.outerHTML='&lt;div class=&quot;mini-live-image server-playback-pending&quot;&gt;视频无法播放，请检查 COS 权限或视频编码格式&lt;/div&gt;'"></video>`
+      : serverRoom.mediaAssetId || serverRoom.streamUrl
+        ? `<div class="mini-live-image server-playback-pending">${E(playback?.error || '正在读取数据库播放源…')}</div>`
+        : `<div class="mini-live-image server-playback-pending">本场尚未配置真实播放源</div>`;
+    html = html.replace(/<(?:img|video)\b[^>]*class="mini-live-image[^\"]*"[^>]*>/, visual);
+  }
   const background = roomBackgroundUrl(r);
   if (r.mode === '直播' && background) {
     html = html.replace(/class="mini-live room-reference/g, `class="mini-live room-reference ops-room-background" style="--ops-room-background:url('${E(background)}')`);
   }
 
-  // 2. 录播循环播放
   if (r.mode === '录播' || r.mode.startsWith('伪直播')) {
     html = html.replace(/<video ([^>]*?)\sloop\s/g, `<video $1 ${r.loopPlayback ? 'loop' : ''} `);
   }
 
-  // 3. 直播间设置：允许聊天
   if (r.mode === '直播' && r.allowChat === false) {
     html = html.replace(/<div class="room-input-shell">[\s\S]*?<\/div>/, '<span class="room-chat-disabled">本场暂未开放聊天</span>');
   }
 
-  // 4. 直播间设置：显示首页
   if (r.mode === '直播' && r.showHome === false) {
     html = html.replace(/<button class="room-home"[\s\S]*?<\/button>/, '');
   }
 
-  // 5. 直播间设置：连麦
   if (r.mode === '直播' && r.connectEnabled === false) {
     html = html.replace(/<button class="room-connect"[\s\S]*?<\/button>/, '');
   }
 
-  // 6. 直播间设置：累计人数
   if (r.mode === '直播' && r.showCumulative === false) {
     html = html.replace(/<div class="room-audience"[\s\S]*?<\/div>/, '');
   }
 
-  // 7. 直播间设置：回放
   if (r.mode === '直播' && r.replayEnabled === false) {
     html = html.replace(/<button class="room-replay"[\s\S]*?<\/button>/, '');
   }
@@ -2159,7 +2321,6 @@ miniWatch = function() {
   return html;
 };
 
-// 记忆播放核心调度
 function handleViewerRememberPlayback(videoId, roomId) {
   const video = document.getElementById(videoId);
   const r = db.rooms.find(x => x.id === roomId);
@@ -2173,13 +2334,12 @@ function handleViewerRememberPlayback(videoId, roomId) {
       video.currentTime = Number(savedPos);
       toast(`已恢复上次观看进度：${fmtMinutesSeconds(Number(savedPos))}`);
     } else {
-      video.currentTime = 0; // 首次进来从第一秒开始
+      video.currentTime = 0;
     }
   } else {
     video.currentTime = 0;
   }
 
-  // 定期记录进度
   video.ontimeupdate = () => {
     if (r.rememberPlayback !== false && video.currentTime > 0) {
       localStorage.setItem(storageKey, String(Math.floor(video.currentTime)));
@@ -2187,7 +2347,7 @@ function handleViewerRememberPlayback(videoId, roomId) {
   };
 }
 
-// 机器人定时发射评论循环 (每 3 秒调度一次活跃任务)
+// 机器人定时发射评论循环
 if (!window._lccRobotInterval) {
   window._lccRobotInterval = setInterval(() => {
     if (!db.robotTasks) return;
@@ -2204,7 +2364,6 @@ if (!window._lccRobotInterval) {
       task.commentIndex = idx + 1;
       task.sentCount = (task.sentCount || 0) + 1;
 
-      // 产生美业特色昵称
       const names = ['美业向向', '美肌时光小鹿', '广州颜悦皮肤', '静静美容定制', '护肤达人琳达', '雅兰美业阿强', '韩辰皮肤管理', '素颜主义小雅'];
       const author = names[Math.floor(Math.random() * names.length)];
 
@@ -2217,10 +2376,8 @@ if (!window._lccRobotInterval) {
         at: Math.floor(Math.random() * 60)
       });
 
-      // 保持最多 60 条评论
       if (db.comments.length > 60) db.comments.shift();
 
-      // 如果当前正处于中控台，实时同步更新弹幕聊天室
       const stream = $('#lcc-chat-stream');
       if (stream && page === 'control') {
         stream.innerHTML = renderLccChatStream(room());
@@ -2230,7 +2387,6 @@ if (!window._lccRobotInterval) {
   }, 4000);
 }
 
-// 全屏中控台全屏切换
 function toggleLccFullscreen() {
   if (!document.fullscreenElement) {
     document.documentElement.requestFullscreen().catch(() => {});
@@ -2244,15 +2400,14 @@ function toggleDarkMode() {
   try {
     localStorage.setItem('lcc-theme', isDark ? 'dark' : 'light');
   } catch (e) {}
-  toast(isDark ? '已切换至深色专业模式' : '已切换至浅色标准模式');
+  toast(isDark ? '已切换至深色模式' : '已切换至浅色标准模式');
 }
 
-// 话术与机器人模板的增删改模态框
 function openRobotTemplateModal(editId) {
   const target = editId ? db.robotTemplates.find(t => t.id === editId) : null;
   const scriptOpts = db.scriptTemplates.map(st => `<option value="${st.name}" ${target?.scriptTemplate === st.name ? 'selected' : ''}>${E(st.name)} (${(st.lines || []).length}条)</option>`).join('');
 
-  modal(target ? '编辑机器人模板' : '新建机器人模板', `
+  showQihuiModal(target ? '编辑机器人模板' : '新建机器人模板', `
     <form onsubmit="saveRobotTemplate(event, ${target ? target.id : 0})">
       <div class="field">
         <label>模板名称</label>
@@ -2271,9 +2426,9 @@ function openRobotTemplateModal(editId) {
         <div class="field"><label>最大发送间隔 (秒)</label><input name="intervalMax" type="number" min="2" max="120" value="${target?.intervalMax || 5}"></div>
       </div>
       <label class="check"><input type="checkbox" name="loop" ${target?.loop !== false ? 'checked' : ''}>循环执行话术</label>
-      <div class="dialog-foot">
-        <button type="button" onclick="closeDialog()">取消</button>
-        <button class="primary" type="submit">保存模板</button>
+      <div class="qihui-modal-footer">
+        <button type="button" class="qihui-btn-cancel" onclick="closeDialog()">取消</button>
+        <button class="qihui-btn-submit" type="submit">保存模板</button>
       </div>
     </form>
   `);
@@ -2313,7 +2468,7 @@ function openScriptTemplateModal(editId) {
   const target = editId ? db.scriptTemplates.find(st => st.id === editId) : null;
   const linesText = target ? (target.lines || []).join('\n') : '';
 
-  modal(target ? '编辑话术模板' : '新建话术模板', `
+  showQihuiModal(target ? '编辑话术模板' : '新建话术模板', `
     <form onsubmit="saveScriptTemplate(event, ${target ? target.id : 0})">
       <div class="field">
         <label>模板名称</label>
@@ -2323,9 +2478,9 @@ function openScriptTemplateModal(editId) {
         <label>话术条目（每行一条弹幕）</label>
         <textarea name="lines" rows="8" required placeholder="输入弹幕话术，每行一条">${E(linesText)}</textarea>
       </div>
-      <div class="dialog-foot">
-        <button type="button" onclick="closeDialog()">取消</button>
-        <button class="primary" type="submit">保存话术</button>
+      <div class="qihui-modal-footer">
+        <button type="button" class="qihui-btn-cancel" onclick="closeDialog()">取消</button>
+        <button class="qihui-btn-submit" type="submit">保存话术</button>
       </div>
     </form>
   `);
@@ -2359,51 +2514,115 @@ function deleteScriptTemplate(id) {
 }
 
 // ==========================================================================
-// 图三高保真：旗慧美业企业级工作台、直播管理列表与全局重塑
+// 旗慧美业海报缩略图生成器与直播间列表 (对齐参考图 3)
 // ==========================================================================
 
-function getUreshiLogoSvg() {
-  return `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="60" height="40" viewBox="0 0 60 40"><rect width="60" height="40" rx="4" fill="%23fff" stroke="%23e2e8f0"/><text x="30" y="18" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9" font-weight="900" fill="%23991b1b" text-anchor="middle">URESHI</text><text x="30" y="30" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="700" fill="%23b91c1c" text-anchor="middle">优润诗</text></svg>`;
-}
+function getQihuiRoomPosterSvg(r = {}) {
+  const id = Number(r.id) || 0;
+  const title = String(r.name || '');
 
-function getCourseCoverSvg(title) {
-  const isGold = title.includes('水光');
-  const isPink = title.includes('抗衰');
-  const bg = isGold ? '%23fffbeb' : isPink ? '%23fdf2f8' : '%23f8fafc';
-  const border = isGold ? '%23fde68a' : isPink ? '%23fbcfe8' : '%23e2e8f0';
-  const color = isGold ? '%23b45309' : isPink ? '%23be185d' : '%232563eb';
-  return `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 60 60"><rect width="60" height="60" rx="4" fill="${bg}" stroke="${border}"/><text x="30" y="24" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="8" font-weight="bold" fill="${color}" text-anchor="middle">${title.slice(0, 4)}</text><text x="30" y="38" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="7" fill="%2364748b" text-anchor="middle">实操课</text><rect x="10" y="44" width="40" height="8" rx="2" fill="${color}"/><text x="30" y="50" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="6" fill="%23fff" text-anchor="middle">精品回放</text></svg>`;
-}
+  // 样式 1：新客大单系统（深红金尊享海报）
+  if (id === 151 || id === 152 || title.includes('新客') || title.includes('大单')) {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">
+      <defs>
+        <linearGradient id="crimsonG" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#ef233c"/>
+          <stop offset="55%" stop-color="#c9182b"/>
+          <stop offset="100%" stop-color="#800f1d"/>
+        </linearGradient>
+        <linearGradient id="goldG" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#fde68a"/>
+          <stop offset="50%" stop-color="#f59e0b"/>
+          <stop offset="100%" stop-color="#fef08a"/>
+        </linearGradient>
+      </defs>
+      <rect width="96" height="96" rx="10" fill="url(#crimsonG)"/>
+      <circle cx="48" cy="18" r="36" fill="#ffffff" fill-opacity="0.08"/>
+      <rect x="22" y="10" width="52" height="14" rx="7" fill="url(#goldG)"/>
+      <text x="48" y="20" font-family="PingFang SC,Microsoft YaHei,sans-serif" font-size="8.5" font-weight="900" fill="#7c2d12" text-anchor="middle">★ 优润诗 ★</text>
+      <text x="48" y="42" font-family="PingFang SC,Microsoft YaHei,sans-serif" font-size="13" font-weight="900" fill="#ffffff" text-anchor="middle">美容院</text>
+      <text x="48" y="58" font-family="PingFang SC,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="800" fill="#fef08a" text-anchor="middle">新客大单收现系统</text>
+      <rect x="16" y="70" width="64" height="15" rx="7.5" fill="url(#goldG)"/>
+      <text x="48" y="80" font-family="PingFang SC,Microsoft YaHei,sans-serif" font-size="8" font-weight="800" fill="#7c2d12" text-anchor="middle">点击进入学习</text>
+    </svg>`;
+    return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+  }
 
-function ensureQihuiLiveRooms() {
-  if (!db.rooms) db.rooms = [];
-  if (db.rooms.some(r => r.id === 151)) return;
+  // 样式 3：水光 / 抗衰直播搭建（香槟金圆章海报，对应 ID 118, 117, 116）
+  if (id === 118 || id === 117 || id === 116 || title.includes('搭建') || title.includes('水光')) {
+    const mainLabel = title.includes('水光') && title.includes('抗衰')
+      ? '水光+抗衰'
+      : (title.includes('水光') ? '水光不露脸直播' : '抗衰不露脸直播');
+    const subLabel = title.includes('水光') && title.includes('抗衰') ? '不露脸直播' : '（陪跑搭建）';
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">
+      <defs>
+        <linearGradient id="champG" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#eab664"/>
+          <stop offset="50%" stop-color="#c68634"/>
+          <stop offset="100%" stop-color="#8c5415"/>
+        </linearGradient>
+      </defs>
+      <rect width="96" height="96" rx="10" fill="url(#champG)"/>
+      <rect x="8" y="8" width="40" height="12" rx="6" fill="#78350f" fill-opacity="0.55"/>
+      <text x="28" y="17" font-family="PingFang SC,Microsoft YaHei,sans-serif" font-size="7.5" font-weight="700" fill="#fef3c7" text-anchor="middle">★ 优润诗</text>
+      <circle cx="48" cy="52" r="32" fill="#fffbeb" stroke="#fde68a" stroke-width="2.5"/>
+      <circle cx="48" cy="52" r="28" fill="none" stroke="#d97706" stroke-width="0.8" stroke-dasharray="3,2"/>
+      <text x="48" y="47" font-family="PingFang SC,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="900" fill="#78350f" text-anchor="middle">${mainLabel}</text>
+      <text x="48" y="60" font-family="PingFang SC,Microsoft YaHei,sans-serif" font-size="8.5" font-weight="700" fill="#b45309" text-anchor="middle">${subLabel}</text>
+      <rect x="27" y="67" width="42" height="11" rx="5.5" fill="#b91c1c"/>
+      <text x="48" y="75" font-family="PingFang SC,Microsoft YaHei,sans-serif" font-size="7" font-weight="700" fill="#ffffff" text-anchor="middle">实战赋能</text>
+    </svg>`;
+    return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+  }
 
-  const qihuiRooms = [
-    { id: 151, name: '新客大单系统', host: '优润诗直播', mode: '录播', status: '直播中', time: '2026-10-24 22:11:13', end: '—', asset: 1, goods: [1, 2], showInList: true, createdAt: '2026-10-24 22:12:00', cover: getUreshiLogoSvg(), layout: '竖屏' },
-    { id: 150, name: '瑞士抗衰', host: '优润诗直播', mode: '录播', status: '直播中', time: '2026-10-24 16:15:58', end: '—', asset: 2, goods: [1], showInList: true, createdAt: '2026-10-24 19:41:11', cover: getCourseCoverSvg('瑞士抗衰'), layout: '竖屏' },
-    { id: 149, name: '瑞士抗衰', host: '优润诗直播', mode: '录播', status: '直播中', time: '2026-10-24 16:15:58', end: '—', asset: 2, goods: [1], showInList: true, createdAt: '2026-10-24 19:41:10', cover: getCourseCoverSvg('瑞士抗衰'), layout: '竖屏' },
-    { id: 148, name: '瑞士抗衰', host: '优润诗直播', mode: '录播', status: '直播中', time: '2026-10-24 16:15:58', end: '—', asset: 2, goods: [1], showInList: true, createdAt: '2026-10-24 19:41:07', cover: getCourseCoverSvg('瑞士抗衰'), layout: '竖屏' },
-    { id: 145, name: '瑞士抗衰', host: '优润诗直播', mode: '录播', status: '直播中', time: '2026-10-24 16:15:58', end: '—', asset: 2, goods: [1], showInList: true, createdAt: '2026-10-24 16:16:25', cover: getCourseCoverSvg('瑞士抗衰'), layout: '竖屏' },
-    { id: 140, name: '采裂频', host: '优润诗直播', mode: '直播', status: '已结束', time: '2026-10-23 19:54:25', end: '2026-10-25 00:19:56', asset: 0, goods: [3], showInList: true, createdAt: '2026-10-23 19:54:51', cover: getCourseCoverSvg('采裂频'), layout: '竖屏' },
-    { id: 118, name: '抗衰直播搭建', host: '优润诗直播', mode: '录播', status: '直播中', time: '2026-10-17 15:36:33', end: '—', asset: 3, goods: [2], showInList: true, createdAt: '2026-10-17 15:37:02', cover: getCourseCoverSvg('抗衰直播'), layout: '竖屏' },
-    { id: 117, name: '水光直播搭建', host: '优润诗直播', mode: '录播', status: '直播中', time: '2026-10-17 15:35:17', end: '—', asset: 4, goods: [1], showInList: true, createdAt: '2026-10-17 15:36:06', cover: getCourseCoverSvg('水光直播'), layout: '竖屏' },
-    { id: 116, name: '水光+抗衰不露脸直播', host: '优润诗直播', mode: '录播', status: '直播中', time: '2026-10-17 15:29:57', end: '—', asset: 1, goods: [1, 4], showInList: true, createdAt: '2026-10-17 15:34:32', cover: getCourseCoverSvg('抗衰水光'), layout: '竖屏' }
-  ];
-
-  db.rooms = [...qihuiRooms, ...db.rooms];
-  persist();
+  // 样式 2：瑞士抗衰 / 录视频（珠光银底 + 绛红丝带海报，对应 ID 150, 149, 148, 145, 140）
+  const bannerTitle = id === 148 ? '瑞士全能细胞抗衰' : ((id === 145 || id === 140) ? '教你明星护肤秘诀' : '瑞士抗衰黑科技');
+  const subText = (id === 145 || id === 140) ? '让你比同龄人更显年轻' : '以科技护肤 · 逆转时光肌龄';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">
+    <defs>
+      <linearGradient id="pearlG" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#f8fafc"/>
+        <stop offset="50%" stop-color="#ede9fe"/>
+        <stop offset="100%" stop-color="#e2e8f0"/>
+      </linearGradient>
+      <linearGradient id="ribbonG" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0%" stop-color="#991b1b"/>
+        <stop offset="50%" stop-color="#dc2626"/>
+        <stop offset="100%" stop-color="#991b1b"/>
+      </linearGradient>
+    </defs>
+    <rect width="96" height="96" rx="10" fill="url(#pearlG)" stroke="#cbd5e1" stroke-width="1"/>
+    <circle cx="80" cy="18" r="24" fill="#f43f5e" fill-opacity="0.1"/>
+    <circle cx="16" cy="78" r="26" fill="#be123c" fill-opacity="0.08"/>
+    <rect x="26" y="10" width="44" height="13" rx="6.5" fill="#b91c1c"/>
+    <text x="48" y="19" font-family="PingFang SC,Microsoft YaHei,sans-serif" font-size="8" font-weight="800" fill="#ffffff" text-anchor="middle">✦ 优润诗 ✦</text>
+    <rect x="6" y="31" width="84" height="20" rx="4" fill="url(#ribbonG)"/>
+    <text x="48" y="44" font-family="PingFang SC,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="900" fill="#ffffff" text-anchor="middle">${bannerTitle}</text>
+    <text x="48" y="63" font-family="PingFang SC,Microsoft YaHei,sans-serif" font-size="7.2" font-weight="600" fill="#475569" text-anchor="middle">${subText}</text>
+    <rect x="22" y="71" width="52" height="13" rx="6.5" fill="#881337"/>
+    <text x="48" y="80" font-family="PingFang SC,Microsoft YaHei,sans-serif" font-size="7.5" font-weight="700" fill="#fde68a" text-anchor="middle">VIP 精品课程</text>
+  </svg>`;
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
 
 let qihuiFilterName = '';
 let qihuiFilterHost = '';
 let qihuiFilterMode = '';
 let qihuiFilterStatus = '';
+let qihuiSidebarCollapsed = false;
+
+function toggleQihuiSidebar() {
+  qihuiSidebarCollapsed = !qihuiSidebarCollapsed;
+  render();
+}
 
 function livePage() {
-  ensureQihuiLiveRooms();
+  if (!serverRoomsLoaded) {
+    if (!serverRoomsLoading && !serverRoomsError) loadServerRooms();
+    return `<section class="qihui-empty-state"><strong>${E(serverRoomsError || '正在读取数据库场次…')}</strong><p>${serverRoomsError ? '请检查管理员登录状态后刷新页面。' : '场次列表只显示服务器数据库中的记录。'}</p>${serverRoomsError ? '<button type="button" class="qihui-btn search" onclick="serverRoomsError=\'\';loadServerRooms()">重试</button>' : ''}</section>`;
+  }
 
-  let list = db.rooms.slice();
+  let list = serverRooms.slice();
   if (qihuiFilterName) list = list.filter(r => r.name.toLowerCase().includes(qihuiFilterName.toLowerCase()));
   if (qihuiFilterHost) list = list.filter(r => (r.host || '优润诗直播').toLowerCase().includes(qihuiFilterHost.toLowerCase()));
   if (qihuiFilterMode) list = list.filter(r => r.mode.includes(qihuiFilterMode));
@@ -2411,25 +2630,25 @@ function livePage() {
 
   return `
   <div class="qihui-live-page">
-    <!-- 合规提示条 (Image 3) -->
+    <!-- 合规提示条 (对齐参考图 3) -->
     <div class="qihui-compliance-bar">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="#64748b" aria-hidden="true"><circle cx="12" cy="12" r="10"/><rect x="11" y="10" width="2" height="7" rx="1" fill="#ffffff"/><circle cx="12" cy="7" r="1.2" fill="#ffffff"/></svg>
       <span>请您遵守国家相关规定，禁止发布含有违法、违规、低俗、暴力、色情、虚假宣传等内容直播。</span>
     </div>
 
-    <!-- 筛选卡片 (Image 3 卡片 1) -->
+    <!-- 筛选卡片 (水平同行标签 + 输入框 + 重置/查询按钮) -->
     <div class="qihui-filter-card">
       <div class="qihui-filter-row">
         <div class="qihui-filter-item">
-          <label>直播间名称</label>
-          <input id="qihuiFilterName" placeholder="请输入直播间名称" value="${E(qihuiFilterName)}">
+          <label for="qihuiFilterName">直播间名称</label>
+          <input id="qihuiFilterName" placeholder="请输入直播间名称" value="${E(qihuiFilterName)}" onkeydown="if(event.key==='Enter')applyQihuiLiveFilters()">
         </div>
         <div class="qihui-filter-item">
-          <label>主播</label>
-          <input id="qihuiFilterHost" placeholder="请输入主播名称" value="${E(qihuiFilterHost)}">
+          <label for="qihuiFilterHost">主播</label>
+          <input id="qihuiFilterHost" placeholder="请输入主播名称" value="${E(qihuiFilterHost)}" onkeydown="if(event.key==='Enter')applyQihuiLiveFilters()">
         </div>
         <div class="qihui-filter-item">
-          <label>直播类型</label>
+          <label for="qihuiFilterMode">直播类型</label>
           <select id="qihuiFilterMode">
             <option value="">请选择直播类型</option>
             <option value="录播" ${qihuiFilterMode === '录播' ? 'selected' : ''}>录播</option>
@@ -2438,7 +2657,7 @@ function livePage() {
           </select>
         </div>
         <div class="qihui-filter-item">
-          <label>直播状态</label>
+          <label for="qihuiFilterStatus">直播状态</label>
           <select id="qihuiFilterStatus">
             <option value="">请选择直播状态</option>
             <option value="直播中" ${qihuiFilterStatus === '直播中' ? 'selected' : ''}>直播中</option>
@@ -2447,21 +2666,21 @@ function livePage() {
           </select>
         </div>
         <div class="qihui-filter-actions">
-          <button class="qihui-btn reset" onclick="resetQihuiLiveFilters()">重置</button>
-          <button class="qihui-btn search" onclick="applyQihuiLiveFilters()">查询</button>
+          <button type="button" class="qihui-btn reset" onclick="resetQihuiLiveFilters()">重置</button>
+          <button type="button" class="qihui-btn search" onclick="applyQihuiLiveFilters()">查询</button>
         </div>
       </div>
     </div>
 
-    <!-- 表格卡片 (Image 3 卡片 2) -->
+    <!-- 表格卡片 -->
     <div class="qihui-table-card">
       <div class="qihui-table-topbar">
-        <button class="qihui-btn create-live" onclick="newLive()">
+        <button type="button" class="qihui-btn create-live" onclick="newLive()">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
           创建直播间
         </button>
-        <button class="qihui-icon-btn refresh" onclick="render()" title="刷新列表">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        <button type="button" class="qihui-icon-btn refresh" onclick="render()" title="刷新列表">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
         </button>
       </div>
 
@@ -2469,21 +2688,21 @@ function livePage() {
         <table class="qihui-enterprise-table">
           <thead>
             <tr>
-              <th style="width:45px">ID</th>
-              <th style="width:65px">展示图</th>
-              <th style="min-width:140px">直播间名称</th>
-              <th style="min-width:90px">主播</th>
-              <th style="min-width:150px">直播时间</th>
-              <th style="width:75px">直播状态</th>
-              <th style="width:65px">类型</th>
-              <th style="width:55px">样式</th>
-              <th style="width:75px">是否展示</th>
-              <th style="min-width:130px">添加时间</th>
-              <th style="min-width:140px">操作</th>
+              <th style="width:60px">ID</th>
+              <th style="width:80px">展示图</th>
+              <th style="min-width:160px">直播间名称</th>
+              <th style="min-width:105px">主播</th>
+              <th style="min-width:190px">直播时间</th>
+              <th style="width:88px">直播状态</th>
+              <th style="width:76px">类型</th>
+              <th style="width:68px">样式</th>
+              <th style="width:88px">是否展示</th>
+              <th style="min-width:150px">添加时间</th>
+              <th style="min-width:165px">操作</th>
             </tr>
           </thead>
           <tbody>
-            ${list.map(r => renderQihuiTableRow(r)).join('') || `<tr><td colspan="11" style="text-align:center;padding:30px;color:#94a3b8">未找到匹配的直播间记录</td></tr>`}
+            ${list.map(r => renderQihuiTableRow(r)).join('') || `<tr><td colspan="11" style="text-align:center;padding:36px;color:#94a3b8">未找到匹配的直播间记录</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -2491,39 +2710,57 @@ function livePage() {
       <div class="qihui-pagination-bar">
         <div>共 ${list.length} 条记录</div>
         <div class="qihui-pager-tools">
-          <button class="pager-btn" disabled>&lt;</button>
+          <button type="button" class="pager-btn" disabled>&lt;</button>
           <span class="pager-current">1</span>
-          <button class="pager-btn" disabled>&gt;</button>
+          <button type="button" class="pager-btn" disabled>&gt;</button>
         </div>
       </div>
     </div>
   </div>`;
 }
 
+function liveRecordsPage() {
+  const rows = serverRooms.filter(room => room.status === '已结束');
+  return `<section class="qihui-page-heading"><div><h1>直播记录</h1><p>已结束场次与回放素材</p></div></section><section class="qihui-table-card"><div class="qihui-table-wrap"><table class="qihui-enterprise-table"><thead><tr><th>ID</th><th>直播间名称</th><th>主播</th><th>结束时间</th><th>类型</th><th>操作</th></tr></thead><tbody>${rows.map(room => `<tr><td>${room.id}</td><td>${E(room.name)}</td><td>${E(room.host || '')}</td><td>${E(room.end || room.time || '')}</td><td>${E(room.mode)}</td><td><button class="link" onclick="watch(${room.id})">观看回放</button></td></tr>`).join('') || '<tr><td colspan="6" class="qihui-empty-cell">暂无已结束场次</td></tr>'}</tbody></table></div></section>`;
+}
+if (typeof window !== 'undefined') window.liveRecordsPage = liveRecordsPage;
+
+function trafficDetailPage() {
+  return `<section class="qihui-page-heading"><div><h1>流量明细</h1><p>当前尚未接入微信侧实时访问明细</p></div></section><section class="qihui-empty-state"><strong>暂无真实流量明细</strong><p>接入小程序访问分析数据后，这里会展示访问时间、来源和场次。</p></section>`;
+}
+
+function liveStatisticsPage() {
+  const total = serverRooms.length;
+  const active = serverRooms.filter(room => room.status === '直播中').length;
+  const ended = serverRooms.filter(room => room.status === '已结束').length;
+  return `<section class="qihui-page-heading"><div><h1>直播统计</h1><p>当前管理端场次状态汇总</p></div></section><div class="qihui-stat-grid"><article><span>场次总数</span><strong>${total}</strong></article><article><span>标记直播中</span><strong>${active}</strong></article><article><span>已结束</span><strong>${ended}</strong></article></div><p class="qihui-data-note">在线人数、观看次数和成交数据尚未接入平台实时统计。</p>`;
+}
+
 function renderQihuiTableRow(r) {
   const isPlaying = r.status === '直播中';
   const isEnded = r.status === '已结束';
-  const isLiveType = r.mode === '直播';
-  const isReplayType = r.mode === '录播';
-  const thumbUrl = r.cover || (r.id === 151 ? getUreshiLogoSvg() : (r.id % 2 === 0 ? 'assets/beauty-products.png' : 'assets/live-still.png'));
+  const isLiveType = r.mode === '实时直播';
+  const isReplayType = r.mode === '录播回放';
+  const thumbUrl = opsImageUrls.get(`${r.id}:cover`) || r.cover;
 
   const statusClass = isPlaying ? 'live' : isEnded ? 'ended' : 'waiting';
   const typeClass = isLiveType ? 'live-type' : isReplayType ? 'replay-type' : 'pseudo-type';
   const typeText = isLiveType ? '直播' : isReplayType ? '录播' : '伪直播';
+  const displayName = r.name.length > 12 ? r.name.slice(0, 11) + '...' : r.name;
 
   return `
   <tr>
-    <td style="color:#64748b;font-weight:500">${r.id}</td>
-    <td>
-      <img src="${E(thumbUrl)}" class="qihui-table-thumb" alt="${E(r.name)}" onerror="this.src='assets/beauty-products.png'">
+    <td class="qihui-td-id">${r.id}</td>
+    <td class="qihui-td-thumb">
+      ${thumbUrl ? `<img src="${E(thumbUrl)}" class="qihui-table-thumb" alt="${E(r.name)}">` : '<span class="qihui-table-thumb" aria-label="未设置封面"></span>'}
     </td>
-    <td>
-      <b>${E(r.name)}</b>
-    </td>
-    <td style="color:#475569">${E(r.host || '优润诗直播')}</td>
-    <td>
-      <div style="font-size:11px">开播：${E(r.time || '2026-10-24 16:15:58')}</div>
-      <div style="font-size:11px;color:#94a3b8">结束：${E(r.end || '—')}</div>
+    <td class="qihui-td-name" title="${E(r.name)}">${E(displayName)}</td>
+    <td class="qihui-td-host">${E(r.host || '优润诗直播')}</td>
+    <td class="qihui-td-time">
+      <div class="qihui-time-pair">
+        <div>开播：${E(formatDisplayTime(r.time))}</div>
+        <div class="qihui-time-end">结束：${E(r.end && r.end !== '—' ? formatDisplayTime(r.end) : '—')}</div>
+      </div>
     </td>
     <td>
       <span class="qihui-status-tag ${statusClass}">${E(r.status)}</span>
@@ -2531,55 +2768,37 @@ function renderQihuiTableRow(r) {
     <td>
       <span class="qihui-type-tag ${typeClass}">${typeText}</span>
     </td>
-    <td style="color:#64748b">${E(r.layout || '竖屏')}</td>
+    <td class="qihui-td-layout">${E(r.layout || '竖屏')}</td>
     <td>
-      <label class="ios-switch small">
-        <input type="checkbox" ${r.showInList !== false ? 'checked' : ''} onchange="toggleRoomVisibility(${r.id}, this.checked)">
-        <span class="slider"></span>
-      </label>
+      <span>数据库</span>
     </td>
-    <td style="color:#64748b;font-size:11px">${E(r.createdAt || r.time || '2026-10-24 19:41:07')}</td>
-    <td>
+    <td class="qihui-td-created">${E(formatDisplayTime(r.createdAt || r.time))}</td>
+    <td class="qihui-td-ops">
       <div class="qihui-ops-links">
-        <div class="qihui-ops-line">
-          <button class="tbl-action-link" onclick="openControl(${r.id})">中控台</button>
-          <button class="tbl-action-link" onclick="editLiveRoom(${r.id})">编辑</button>
-          <button class="tbl-action-link" onclick="copyLiveRoom(${r.id})">复制</button>
-        </div>
-        <div class="qihui-ops-line">
-          ${r.id === 140 || r.mode === '直播' ? `
-            <button class="tbl-action-link" onclick="openPushPullModal(${r.id})">推拉流</button>
-          ` : `
-            <button class="tbl-action-link" onclick="openLiveShareModal(${r.id})">分享</button>
-          `}
-          <button class="tbl-action-link qihui-more-btn" onclick="toggleMoreOpsMenu(event, ${r.id})">··· 更多</button>
+        <div class="qihui-ops-grid">
+          <button type="button" class="tbl-action-link" onclick="openControl(${r.id})">中控台</button>
+          <button type="button" class="tbl-action-link" onclick="editLiveRoom(${r.id})">编辑</button>
+          <button type="button" class="tbl-action-link" onclick="openLiveShareModal(${r.id})">分享</button>
+          ${isLiveType ? `<button type="button" class="tbl-action-link" onclick="openPushPullModal(${r.id})">推拉流</button>` : `<span class="tbl-action-placeholder"></span>`}
+          <button type="button" class="tbl-action-link qihui-more-btn" onclick="toggleMoreOpsMenu(event, ${r.id})">··· 更多</button>
         </div>
         ${activeMoreDropdownRoomId === r.id ? `
           <div class="qihui-more-dropdown-menu" onclick="event.stopPropagation()">
-            <button class="qihui-dropdown-item" onclick="activeMoreDropdownRoomId=null;openLiveSettingsModal(${r.id})">
+            <button type="button" class="qihui-dropdown-item" onclick="activeMoreDropdownRoomId=null;openLiveSettingsModal(${r.id})">
               <span>⚙️</span> 直播设置
             </button>
-            ${r.id === 140 || r.mode === '直播' ? `
-              <button class="qihui-dropdown-item" onclick="activeMoreDropdownRoomId=null;openLiveShareModal(${r.id})">
-                <span>🔗</span> 分享小程序/H5
-              </button>
-            ` : `
-              <button class="qihui-dropdown-item" onclick="activeMoreDropdownRoomId=null;openPushPullModal(${r.id})">
-                <span>📡</span> 推拉流配置
-              </button>
-            `}
+            <button type="button" class="qihui-dropdown-item" onclick="activeMoreDropdownRoomId=null;openPushPullModal(${r.id})">
+              <span>📡</span> 推拉流配置
+            </button>
             ${isPlaying ? `
-              <button class="qihui-dropdown-item danger" onclick="confirmCloseLiveRoom(${r.id})">
+              <button type="button" class="qihui-dropdown-item danger" onclick="confirmCloseLiveRoom(${r.id})">
                 <span>🛑</span> 关闭直播
               </button>
             ` : `
-              <button class="qihui-dropdown-item success" onclick="startLiveRoom(${r.id})">
+              <button type="button" class="qihui-dropdown-item success" onclick="startLiveRoom(${r.id})">
                 <span>▶️</span> 开启直播
               </button>
             `}
-            <button class="qihui-dropdown-item delete" onclick="confirmDeleteLiveRoom(${r.id})">
-              <span>🗑️</span> 删除场次
-            </button>
           </div>
         ` : ''}
       </div>
@@ -2603,19 +2822,50 @@ function resetQihuiLiveFilters() {
   render();
 }
 
-// 全局覆写中控台和工作台为图二沉浸式专业中控台与图三企业后台
+// 顶栏图标集（对齐参考图 3）
+function qihuiNavIcon(name) {
+  const icons = {
+    workbench: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5V20a1 1 0 0 1-1 1h-5.5v-6h-5v6H4a1 1 0 0 1-1-1v-9.5z"/></svg>',
+    course: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h7a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H2V4z"/><path d="M22 4h-7a3 3 0 0 0-3 3v13a2 2 0 0 1 2-2h8V4z"/></svg>',
+    live: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.2"/><path d="M8.5 8.5a5 5 0 0 0 0 7"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M5.5 5.5a9 9 0 0 0 0 13"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>',
+    mall: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>',
+    decorate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.65-.75 1.65-1.69 0-.43-.18-.83-.44-1.12-.29-.29-.44-.65-.44-1.12a1.64 1.64 0 0 1 1.67-1.67h1.99c3.05 0 5.55-2.5 5.55-5.55C21.97 5.95 17.46 2 12 2z"/></svg>',
+    trade: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>',
+    users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+    data: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><line x1="8" y1="16" x2="8" y2="11"/><line x1="13" y1="16" x2="13" y2="7"/><line x1="18" y1="16" x2="18" y2="13"/></svg>',
+    settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+    apps: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M19.439 7.85c-.049.322.059.648.289.878l1.568 1.568c.47.47.706 1.087.706 1.704s-.235 1.233-.706 1.704l-1.611 1.611a.98.98 0 0 1-.837.276c-.47-.07-.802-.48-.968-.925a2.501 2.501 0 1 0-3.214 3.214c.446.166.855.497.925.968a.979.979 0 0 1-.276.837l-1.61 1.61a2.404 2.404 0 0 1-1.705.707 2.402 2.402 0 0 1-1.704-.706l-1.568-1.568a1.026 1.026 0 0 0-.877-.29c-.493.074-.84.504-1.02.968a2.5 2.5 0 1 1-3.237-3.237c.464-.18.894-.527.967-1.02a1.026 1.026 0 0 0-.289-.877l-1.568-1.568A2.402 2.402 0 0 1 1.998 12c0-.617.236-1.234.706-1.704L4.23 8.77c.24-.24.581-.353.917-.303.515.077.877.528 1.073 1.01a2.5 2.5 0 1 0 3.259-3.259c-.482-.196-.933-.558-1.01-1.073-.05-.336.062-.676.303-.917l1.525-1.525A2.402 2.402 0 0 1 12 1.998c.617 0 1.234.236 1.704.706l1.568 1.568c.23.23.556.338.877.29.493-.074.84-.504 1.02-.968a2.5 2.5 0 1 1 3.237 3.237c-.464.18-.894.527-.967 1.02Z"/></svg>'
+  };
+  return icons[name] || icons.live;
+}
+
 window.controlPage = controlPage;
-window.liveWorkspace = controlPage;
-window.overviewPage = controlPage;
+window.liveWorkspace = livePage;
 window.livePage = livePage;
 
-// 动态处理沉浸式全屏中控台布局与企业工作台布局 (图二、图三布局规范)
+// 初始化默认页面：打开或刷新 PC 端时默认进入「直播间列表」(page = 'live')，仅当 URL 显式带 page=control 或点击「中控台」时才进入中控台
 if (typeof window !== 'undefined') {
+  const initParams = new URLSearchParams(location.search);
+  const initPage = initParams.get('page');
+  if (surface === 'pc') {
+    page = initPage === 'control' ? 'control' : (initPage || 'live');
+  }
+
+  window.openControl = function(id) {
+    roomId = Number(id) || 1;
+    page = 'control';
+    render();
+    scrollTop();
+  };
+
   window.render = function() {
     clearInterval(autoTimer);
+    clearInterval(liveDurationTimer);
+    $$('[data-surface]').forEach(button => button.classList.toggle('active', button.dataset.surface === surface));
     if (surface === 'pc') {
       document.body.classList.add('in-pc-mode');
-      if (page === 'overview' || page === 'control') {
+      // 仅当明确点击「中控台」(page === 'control') 时才进入全屏中控台，刷新或默认进入直播间列表
+      if (page === 'control') {
         document.body.classList.add('in-lcc-mode');
         try {
           if (localStorage.getItem('lcc-theme') === 'dark') {
@@ -2625,116 +2875,133 @@ if (typeof window !== 'undefined') {
           }
         } catch (e) {}
         $('#app').innerHTML = controlPage();
+        startLiveDurationTicker(serverRooms.find(item => item.id === Number(roomId))?._server);
+        if (!serverRoomsLoaded && !serverRoomsLoading && !serverRoomsError) loadServerRooms();
+        else if (serverRoomsLoaded) ensureServerPlayback(roomId);
       } else {
         document.body.classList.remove('in-lcc-mode');
+        if (['live', 'records', 'statistics', 'trafficStats'].includes(page) && !serverRoomsLoaded && !serverRoomsLoading && !serverRoomsError) loadServerRooms();
+        const isLiveGroup = ['live', 'records', 'scripts', 'robots', 'comments'].includes(page);
         $('#app').innerHTML = `
           <header class="qihui-header-bar">
-            <div class="qihui-brand-group">
-              <div class="qihui-brand-logo">
-                <span class="qihui-logo-icon">T</span>
-                <span>旗慧美业</span>
+            <div class="qihui-header-left">
+              <div class="qihui-brand-group">
+                <div class="qihui-brand-logo" onclick="go('live')" style="cursor:pointer">
+                  <span class="qihui-logo-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M8 7v11a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V7"/><path d="M10 12h4"/></svg>
+                  </span>
+                  <span>旗慧美业</span>
+                </div>
+                <button type="button" class="qihui-refresh-btn" onclick="render()" title="刷新">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
+                </button>
               </div>
-              <button class="qihui-refresh-btn" onclick="render()" title="刷新">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-              </button>
-            </div>
 
-            <nav class="qihui-nav-tabs">
-              <button class="qihui-nav-tab" onclick="openControl(1)">工作台</button>
-              <button class="qihui-nav-tab" onclick="go('media')">课程</button>
-              <button class="qihui-nav-tab ${page==='live'?'active':''}" onclick="go('live')">直播</button>
-              <button class="qihui-nav-tab ${page==='goods'?'active':''}" onclick="go('goods')">商城</button>
-              <button class="qihui-nav-tab ${page==='shop'?'active':''}" onclick="go('shop')">装修</button>
-              <button class="qihui-nav-tab ${page==='orders'?'active':''}" onclick="go('orders')">交易</button>
-              <button class="qihui-nav-tab ${page==='members'?'active':''}" onclick="go('members')">用户</button>
-              <button class="qihui-nav-tab ${page==='data'?'active':''}" onclick="go('data')">数据</button>
-              <button class="qihui-nav-tab ${page==='settings'?'active':''}" onclick="go('settings')">设置</button>
-              <button class="qihui-nav-tab ${page==='marketing'?'active':''}" onclick="go('marketing')">应用</button>
-            </nav>
-
-            <div class="qihui-surface-switcher">
-              <button class="qihui-surface-btn active">PC后台</button>
-              <button class="qihui-surface-btn" onclick="switchSurface('mini')">小程序</button>
-              <button class="qihui-surface-btn" onclick="switchSurface('h5')">H5端</button>
-              <button class="qihui-surface-btn" onclick="switchSurface('capture')">录制APP</button>
+              <nav class="qihui-nav-tabs" aria-label="主导航">
+                <button type="button" class="qihui-nav-tab ${page==='overview'?'active':''}" onclick="go('overview')">${qihuiNavIcon('workbench')}<span>工作台</span></button>
+                <button type="button" class="qihui-nav-tab ${page==='media'?'active':''}" onclick="go('media')">${qihuiNavIcon('course')}<span>课程</span></button>
+                <button type="button" class="qihui-nav-tab ${isLiveGroup?'active':''}" onclick="go('live')">${qihuiNavIcon('live')}<span>直播</span></button>
+                <button type="button" class="qihui-nav-tab ${page==='goods'?'active':''}" onclick="go('goods')">${qihuiNavIcon('mall')}<span>商城</span></button>
+                <button type="button" class="qihui-nav-tab ${page==='shop'?'active':''}" onclick="go('shop')">${qihuiNavIcon('decorate')}<span>装修</span></button>
+                <button type="button" class="qihui-nav-tab ${page==='orders'?'active':''}" onclick="go('orders')">${qihuiNavIcon('trade')}<span>交易</span></button>
+                <button type="button" class="qihui-nav-tab ${page==='members'?'active':''}" onclick="go('members')">${qihuiNavIcon('users')}<span>用户</span></button>
+                <button type="button" class="qihui-nav-tab ${page==='data'?'active':''}" onclick="go('data')">${qihuiNavIcon('data')}<span>数据</span></button>
+                <button type="button" class="qihui-nav-tab ${page==='settings'?'active':''}" onclick="go('settings')">${qihuiNavIcon('settings')}<span>设置</span></button>
+                <button type="button" class="qihui-nav-tab ${page==='marketing'?'active':''}" onclick="go('marketing')">${qihuiNavIcon('apps')}<span>应用</span></button>
+              </nav>
             </div>
 
             <div class="qihui-header-tools">
-              <button class="qihui-tool-icon" onclick="go('settings')" title="设置"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
-              <button class="qihui-tool-icon" onclick="toggleDarkMode()" title="夜间模式"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button>
-              <button class="qihui-tool-icon" onclick="toggleLccFullscreen()" title="全屏"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
-              <div class="qihui-user-badge" title="当前登录账户：MY 优润诗管理">MY</div>
+              <div class="qihui-surface-switcher" title="多端预览切换">
+                <button type="button" class="qihui-surface-btn active">PC后台</button>
+                <button type="button" class="qihui-surface-btn" onclick="switchSurface('mini')">小程序</button>
+                <button type="button" class="qihui-surface-btn" onclick="switchSurface('h5')">H5端</button>
+              </div>
+              <button type="button" class="qihui-tool-icon" onclick="go('settings')" title="系统设置"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+              <button type="button" class="qihui-tool-icon" onclick="toggleDarkMode()" title="深浅模式"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button>
+              <button type="button" class="qihui-tool-icon" onclick="toggleLccFullscreen()" title="全屏"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
+              <div class="qihui-user-badge" title="当前登录账户：MY 旗慧美业管理员">
+                <span>MY</span>
+                <i class="qihui-user-online-dot"></i>
+              </div>
             </div>
           </header>
 
-          <div class="qihui-workbench-layout">
+          <div class="qihui-workbench-layout ${qihuiSidebarCollapsed ? 'sidebar-collapsed' : ''}">
             <aside class="qihui-sidebar">
               <nav class="qihui-sidebar-nav">
-                <button class="qihui-sidebar-item ${page==='live'?'active':''}" onclick="go('live')">
+                <button type="button" class="qihui-sidebar-item ${page==='live'?'active':''}" onclick="go('live')">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                   <span>直播间列表</span>
                 </button>
-                <button class="qihui-sidebar-item" onclick="configure('stream')">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                <button type="button" class="qihui-sidebar-item" onclick="configure('stream')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                   <span>直播配置</span>
                 </button>
-                <button class="qihui-sidebar-item" onclick="modal('主播管理', '<div style=\\'padding:12px\\'><h4>签约主播列表</h4><p style=\\'color:#64748b;font-size:12px\\'>优润诗官方主播 · 向总团队已认证就绪</p></div>')">
+                <button type="button" class="qihui-sidebar-item" onclick="showQihuiModal('主播管理', '<div style=\\'padding:8px 4px\\'><h4 style=\\'margin:0 0 8px\\'>签约主播列表</h4><p style=\\'color:#64748b;font-size:13px\\'>优润诗直播 · 向总团队已认证就绪</p></div>')">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                   <span>主播管理</span>
                 </button>
-                <button class="qihui-sidebar-item" onclick="go('live')">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <button type="button" class="qihui-sidebar-item ${page==='records'?'active':''}" onclick="go('records')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>
                   <span>直播记录</span>
                 </button>
-                <button class="qihui-sidebar-item" onclick="go('data')">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                <button type="button" class="qihui-sidebar-item ${page==='statistics'?'active':''}" onclick="go('statistics')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><polyline points="7 14 12 9 16 13 21 8"/></svg>
                   <span>直播统计</span>
                 </button>
-                <button class="qihui-sidebar-item" onclick="go('data')">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+                <button type="button" class="qihui-sidebar-item ${page==='trafficStats'?'active':''}" onclick="go('trafficStats')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"/><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="M12 2v2"/></svg>
                   <span>流量统计</span>
                 </button>
-                <button class="qihui-sidebar-item" onclick="go('data')">
+                <button type="button" class="qihui-sidebar-item ${page==='traffic'?'active':''}" onclick="go('traffic')">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
                   <span>流量明细</span>
                 </button>
-                <button class="qihui-sidebar-item" onclick="go('finance')">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                <button type="button" class="qihui-sidebar-item ${page==='finance'?'active':''}" onclick="go('finance')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M12 9v6m-3-3h6"/></svg>
                   <span>充值记录</span>
                 </button>
-                <button class="qihui-sidebar-item" onclick="configure('sync')">
+                <button type="button" class="qihui-sidebar-item" onclick="configure('sync')">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                   <span>域名管理</span>
                 </button>
-                <button class="qihui-sidebar-item" onclick="modal('投诉管理', '<div style=\\'padding:12px\\'><h4>用户反馈与维权</h4><p style=\\'color:#64748b;font-size:12px\\'>当前暂无未处理的观众投诉记录</p></div>')">
+                <button type="button" class="qihui-sidebar-item" onclick="showQihuiModal('投诉管理', '<div style=\\'padding:8px 4px\\'><h4 style=\\'margin:0 0 8px\\'>用户反馈与维权</h4><p style=\\'color:#64748b;font-size:13px\\'>当前暂无未处理的观众投诉记录</p></div>')">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
                   <span>投诉管理</span>
                 </button>
-                <button class="qihui-sidebar-item" onclick="go('media')">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                <button type="button" class="qihui-sidebar-item ${page==='media'?'active':''}" onclick="go('media')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="7" y1="4" x2="7" y2="20"/><line x1="17" y1="4" x2="17" y2="20"/><line x1="3" y1="12" x2="21" y2="12"/></svg>
                   <span>素材管理</span>
                 </button>
-                <button class="qihui-sidebar-item" onclick="go('scripts')">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                  <span>话术模板</span>
+                <button type="button" class="qihui-sidebar-item ${page==='scripts'?'active':''}" onclick="go('scripts')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
+                  <span>话术模版</span>
                 </button>
-                <button class="qihui-sidebar-item" onclick="go('robots')">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg>
-                  <span>机器人模板</span>
+                <button type="button" class="qihui-sidebar-item ${page==='robots'?'active':''}" onclick="go('robots')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8.01" y2="16"/><line x1="16" y1="16" x2="16.01" y2="16"/></svg>
+                  <span>机器人模版</span>
                 </button>
-                <button class="qihui-sidebar-item" onclick="modal('敏感词设置', '<div style=\\'padding:12px\\'><h4>违规关键词拦截库</h4><p style=\\'color:#64748b;font-size:12px\\'>已启用全国美业直播通用违规词、极限词过滤引擎</p></div>')">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                <button type="button" class="qihui-sidebar-item" onclick="showQihuiModal('敏感词设置', '<div style=\\'padding:8px 4px\\'><h4 style=\\'margin:0 0 8px\\'>违规关键词拦截库</h4><p style=\\'color:#64748b;font-size:13px\\'>已启用美业直播通用违规词、极限词过滤引擎</p></div>')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
                   <span>敏感词设置</span>
                 </button>
               </nav>
 
               <div class="qihui-sidebar-footer">
-                <button class="qihui-pin-btn" title="固定侧边栏">📌</button>
+                <button type="button" class="qihui-collapse-btn" onclick="toggleQihuiSidebar()" title="${qihuiSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'}">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
+                </button>
+                <button type="button" class="qihui-pin-btn" title="固定侧边栏">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>
+                </button>
               </div>
             </aside>
 
             <main class="qihui-main-content">
-              ${adminPage()}
+              ${['live', 'records', 'statistics', 'trafficStats'].includes(page) && !serverRoomsLoaded
+                ? `<section class="qihui-empty-state"><strong>${E(serverRoomsError || '正在读取数据库场次…')}</strong><p>${serverRoomsError ? '请检查管理员登录状态后刷新页面。' : '场次列表只显示服务器数据库中的记录。'}</p>${serverRoomsError ? '<button type="button" class="qihui-btn search" onclick="serverRoomsError=\'\';loadServerRooms()">重试</button>' : ''}</section>`
+                : adminPage()}
             </main>
           </div>
         `;
@@ -2743,16 +3010,18 @@ if (typeof window !== 'undefined') {
       document.body.classList.remove('in-pc-mode');
       document.body.classList.remove('in-lcc-mode');
       $('#app').innerHTML = previewLayout();
+      if (miniPage === 'watch') {
+        if (!serverRoomsLoaded && !serverRoomsLoading && !serverRoomsError) loadServerRooms();
+        else if (serverRoomsLoaded) ensureServerPlayback(roomId);
+      }
     }
   };
 }
 
-// 确保选中的主标签属于允许的四个：在线观众、商品管理、弹幕机器人、邀请记录
 if (!['在线观众', '商品管理', 'robot', '邀请记录'].includes(currentLccMainTab)) {
   currentLccMainTab = '在线观众';
 }
 
-// 全局点击自动关闭更多下拉操作栏
 if (typeof document !== 'undefined') {
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.qihui-more-btn') && !e.target.closest('.qihui-more-dropdown-menu')) {
@@ -2764,7 +3033,4 @@ if (typeof document !== 'undefined') {
   });
 }
 
-// 刷新页面状态保持
 render();
-
-

@@ -13,7 +13,7 @@ server:
     include-stacktrace: never
 spring:
   config:
-    import: optional:file:/app/data/wechat-share.properties
+    import: optional:file:/app/data/wechat-share.properties,optional:file:/app/data/cos.properties
   application:
     name: meiye-live
   datasource:
@@ -38,6 +38,7 @@ meiye:
     app-secret: ${WECHAT_APP_SECRET:}
     env-version: ${WECHAT_ENV_VERSION:release}
     watch-url: ${MEIYE_PUBLIC_WATCH_URL:https://voice.yourunshi.online/meiye/meiye/}
+    h5-room-url: ${MEIYE_PUBLIC_H5_ROOM_URL:https://voice.yourunshi.online/meiye/share/rooms/}
   admin-username: ${MEIYE_ADMIN_USERNAME:admin}
   admin-password: ${MEIYE_ADMIN_PASSWORD:}
   live-url: ${MEIYE_LIVE_URL:}

@@ -11,6 +11,9 @@ public class PlaybackService {
     public PlaybackService() { this(Clock.systemUTC()); }
     public PlaybackService(Clock clock) { this.clock = clock; }
     public PlaybackState state(Room room) {
+        return state(room, room.getStreamUrl());
+    }
+    public PlaybackState state(Room room, String source) {
         Instant now = clock.instant();
         String phase;
         long offset = 0;
@@ -26,8 +29,8 @@ public class PlaybackService {
         } else if (room.getMode() == RoomMode.REPLAY) phase = "PLAYING";
         else phase = room.getStatus() == RoomStatus.LIVE ? "PLAYING" : room.getStatus() == RoomStatus.ENDED ? "ENDED" : "WAITING";
         // Availability is separate from schedule; a missing media URL can never look like a broadcast.
-        if ("PLAYING".equals(phase) && (room.getStreamUrl() == null || room.getStreamUrl().isBlank())) phase = "UNCONFIGURED";
-        return new PlaybackState(phase, offset, room.getScheduledAt(), now, room.getStreamUrl(), room.getMode(), room.getDurationSeconds());
+        if ("PLAYING".equals(phase) && (source == null || source.isBlank())) phase = "UNCONFIGURED";
+        return new PlaybackState(phase, offset, room.getScheduledAt(), now, source, room.getMode(), room.getDurationSeconds());
     }
     public record PlaybackState(String phase, long offsetSeconds, Instant startsAt, Instant serverTime, String source, RoomMode mode, int durationSeconds) { }
 }

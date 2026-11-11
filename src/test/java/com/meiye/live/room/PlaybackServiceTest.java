@@ -116,6 +116,29 @@ class PlaybackServiceTest {
     }
 
     @Test
+    void replayCanUseAResolvedPrivateMediaUrl() {
+        Room room = room(RoomMode.REPLAY, RoomStatus.ENDED);
+        room.setStreamUrl("");
+
+        PlaybackService.PlaybackState state = playback.state(room, SOURCE);
+
+        assertThat(state.phase()).isEqualTo("PLAYING");
+        assertThat(state.source()).isEqualTo(SOURCE);
+    }
+
+    @Test
+    void roomWithAnAssociatedMediaAssetReportsMediaReady() {
+        Room room = room(RoomMode.REPLAY, RoomStatus.ENDED);
+        room.setStreamUrl("");
+        room.setMediaAssetId(42L);
+
+        RoomView view = RoomView.of(room, 0);
+
+        assertThat(view.mediaAssetId()).isEqualTo(42L);
+        assertThat(view.mediaReady()).isTrue();
+    }
+
+    @Test
     void replayWithoutMediaIsUnconfigured() {
         Room room = room(RoomMode.REPLAY, RoomStatus.ENDED);
         room.setStreamUrl("  ");

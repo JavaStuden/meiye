@@ -11,7 +11,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.meiye.live.media.MediaAsset;
+import com.meiye.live.media.MediaAssetRepository;
 import com.meiye.live.room.RoomRepository;
+import com.meiye.live.room.RoomService;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -25,9 +28,12 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 @SpringBootTest(properties = {
     "spring.datasource.url=jdbc:h2:mem:integration;DB_CLOSE_DELAY=-1",
@@ -45,6 +51,8 @@ class WebApplicationTest {
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper json;
     @Autowired RoomRepository rooms;
+    @Autowired MediaAssetRepository mediaAssets;
+    @Autowired RoomService roomService;
 
     @ParameterizedTest
     @ValueSource(longs = {1, 3, 2})
@@ -62,6 +70,16 @@ class WebApplicationTest {
         mvc.perform(get("/admin"))
             .andExpect(status().is3xxRedirection()).andExpect(redirectedUrlPattern("**/login"));
         mvc.perform(get("/login")).andExpect(status().isOk()).andExpect(view().name("login"));
+    }
+
+    @Test
+    void sharedH5RoomOpensDirectDatabaseBackedViewerWithoutAdminShell() throws Exception {
+        mvc.perform(get("/share/rooms/1"))
+            .andExpect(status().isOk())
+            .andExpect(view().name("share-viewer"))
+            .andExpect(model().attributeExists("room", "playback", "commentsEnabled"))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("与小程序共用评论流")))
+            .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("PC 直播后台"))));
     }
 
     @Test
@@ -91,6 +109,20 @@ class WebApplicationTest {
         mvc.perform(get("/api/rooms/999")).andExpect(status().isNotFound());
         mvc.perform(get("/api/rooms/1/playback"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("UNCONFIGURED"));
+    }
+
+    @Test
+    void posterAssetUrlIncludesServletContextPath() {
+        var poster = mediaAssets.save(new MediaAsset("poster.jpg", "covers/test-poster.jpg", "image/jpeg", 10));
+        rooms.findById(1L).orElseThrow().setPosterAssetId(poster.getId());
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setContextPath("/meiye");
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+        try {
+            assertThat(roomService.view(1L).posterUrl()).isEqualTo("/meiye/api/rooms/1/poster");
+        } finally {
+            RequestContextHolder.resetRequestAttributes();
+        }
     }
 
     @Test
@@ -173,6 +205,45 @@ class WebApplicationTest {
     }
 
     @Test
+    void adminRoomStatusApiRequiresAdminAndPersistsStatus() throws Exception {
+        mvc.perform(post("/api/admin/rooms/1/status").with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"ENDED\"}"))
+            .andExpect(status().is3xxRedirection()).andExpect(redirectedUrlPattern("**/login"));
+
+        mvc.perform(post("/api/admin/rooms/1/status").with(user("viewer").roles("VIEWER")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"ENDED\"}"))
+            .andExpect(status().isForbidden());
+
+        mvc.perform(post("/api/admin/rooms/1/status").with(user("admin").roles("ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"ENDED\"}"))
+            .andExpect(status().isForbidden());
+
+        mvc.perform(post("/api/admin/rooms/1/status").with(user("admin").roles("ADMIN")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"ENDED\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ENDED"));
+        mvc.perform(get("/api/rooms/1"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ENDED"));
+    }
+
+    @Test
+    void liveDurationUsesPersistedStartAndEndTransitions() throws Exception {
+        mvc.perform(post("/api/admin/rooms/1/status").with(user("admin").roles("ADMIN")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"ENDED\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.liveStartedAt").value(org.hamcrest.Matchers.nullValue()));
+        mvc.perform(post("/api/admin/rooms/1/status").with(user("admin").roles("ADMIN")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"LIVE\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.liveStartedAt").isNotEmpty())
+            .andExpect(jsonPath("$.liveEndedAt").value(org.hamcrest.Matchers.nullValue()));
+        mvc.perform(post("/api/admin/rooms/1/status").with(user("admin").roles("ADMIN")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"ENDED\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.liveStartedAt").isNotEmpty())
+            .andExpect(jsonPath("$.liveEndedAt").isNotEmpty());
+    }
+
+    @Test
     void adminRoomFormRejectsBlankRequiredValues() throws Exception {
         mvc.perform(validRoomForm("title", "").with(user("admin").roles("ADMIN")).with(csrf()))
             .andExpect(status().isBadRequest());
@@ -182,6 +253,18 @@ class WebApplicationTest {
     @ValueSource(strings = {"javascript:alert(1)", "//untrusted.example/video.mp4", "https://user:secret@example.test/video.mp4"})
     void adminRoomFormRejectsUnsafeMediaAddresses(String url) throws Exception {
         mvc.perform(validRoomForm("streamUrl", url).with(user("admin").roles("ADMIN")).with(csrf()))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void adminRoomFormRejectsUnknownMediaAssets() throws Exception {
+        mvc.perform(validRoomForm("mediaAssetId", "99999", "streamUrl", "").with(user("admin").roles("ADMIN")).with(csrf()))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void adminRoomFormRejectsUnknownPosterAssets() throws Exception {
+        mvc.perform(validRoomForm("posterAssetId", "99999").with(user("admin").roles("ADMIN")).with(csrf()))
             .andExpect(status().isBadRequest());
     }
 

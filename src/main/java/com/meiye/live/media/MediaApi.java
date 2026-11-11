@@ -14,6 +14,7 @@ import org.springframework.web.server.ResponseStatusException;
 @RequestMapping({"/api/admin/media", "/meiye/api/admin/media"})
 public class MediaApi {
     private static final long MAX_UPLOAD_BYTES = 2L * 1024 * 1024 * 1024;
+    private static final long MAX_IMAGE_BYTES = 10L * 1024 * 1024;
     private final MediaAssetRepository assets;
     private final CosStorageService cos;
 
@@ -22,7 +23,13 @@ public class MediaApi {
     @GetMapping
     public List<MediaView> list() {
         cos.requireReady();
-        return assets.findTop200ByOrderByCreatedAtDesc().stream().map(this::view).toList();
+        return assets.findTop200ByOrderByCreatedAtDesc().stream().filter(asset -> asset.getContentType().startsWith("video/")).map(this::view).toList();
+    }
+
+    @GetMapping("/images")
+    public List<MediaView> images() {
+        cos.requireReady();
+        return assets.findTop200ByOrderByCreatedAtDesc().stream().filter(asset -> asset.getContentType().startsWith("image/")).map(this::view).toList();
     }
 
     @PostMapping(consumes = "multipart/form-data")
@@ -37,6 +44,22 @@ public class MediaApi {
         String key = "media/" + UUID.randomUUID() + "/" + safeName;
         try { cos.upload(key, file.getInputStream(), file.getSize(), contentType); }
         catch (IOException exception) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "读取上传文件失败"); }
+        return view(assets.save(new MediaAsset(safeName, key, contentType, file.getSize())));
+    }
+
+    @PostMapping(value = "/images", consumes = "multipart/form-data")
+    @ResponseStatus(HttpStatus.CREATED)
+    @Transactional
+    public MediaView uploadImage(@RequestPart("file") MultipartFile file) {
+        if (file.isEmpty()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请选择封面图片");
+        if (file.getSize() > MAX_IMAGE_BYTES) throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "封面图片不能超过 10 MB");
+        String contentType = file.getContentType() == null ? "" : file.getContentType().toLowerCase(Locale.ROOT);
+        if (!List.of("image/jpeg", "image/png", "image/webp").contains(contentType))
+            throw new ResponseStatusException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "封面仅支持 JPG、PNG 或 WebP 图片");
+        String safeName = safeFilename(file.getOriginalFilename());
+        String key = "covers/" + UUID.randomUUID() + "/" + safeName;
+        try { cos.upload(key, file.getInputStream(), file.getSize(), contentType); }
+        catch (IOException exception) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "读取封面图片失败"); }
         return view(assets.save(new MediaAsset(safeName, key, contentType, file.getSize())));
     }
 

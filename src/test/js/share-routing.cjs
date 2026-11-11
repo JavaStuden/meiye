@@ -12,7 +12,12 @@ for (const scene of ['id=0', 'id=-1', '%E0%A4%A', 'id=3&room=1', 'id=90071992547
   assert.equal(read({scene}), null);
 
 const full = fs.readFileSync(path.join(project, 'src/main/resources/static/live-operations.js'), 'utf8');
+assert.match(full, /function formatLiveDuration\(room, now = Date\.now\(\)\)/);
+const control = full.slice(full.indexOf('function controlPage()'), full.indexOf('function commentsPage()'));
+assert.match(control, /\$\{E\(formatLiveDuration\(serverRoom\)\)\}/);
+assert.doesNotMatch(control, /70:46:20/);
 const source = full.slice(full.indexOf('let liveShareRequest ='), full.indexOf('let selectedFolder ='));
+  assert.match(full, /function copyMiniProgramPath\(id\) \{ copyH5LiveUrl\(`pages\/watch-share\/watch-share\?id=\$\{id\}`\); \}/);
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 async function scenario(mode, pathname = '/meiye/admin') {
@@ -46,6 +51,9 @@ async function scenario(mode, pathname = '/meiye/admin') {
   if (mode === 'redirect') {
     assert.match(element('#share-mini-image').textContent, /请先登录/);
     assert.equal(element('#share-mini-save').disabled, true);
+    assert.match(element('#share-h5-image').textContent, /请先登录/);
+    assert.equal(element('#share-h5-save').disabled, true);
+    assert.equal(element('#share-admin-login').hidden, false);
   } else {
     assert.equal(element('#share-h5-save').disabled, false);
     assert.equal(element('#share-h5-open').href, 'https://example.test/?room=3');

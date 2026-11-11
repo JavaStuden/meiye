@@ -22,7 +22,7 @@ class WechatCodeServiceTest {
     private final byte[] image = new byte[] {(byte)0x89, 'P', 'N', 'G', 13, 10, 26, 10, 1};
 
     private WechatCodeService service(String secret) {
-        return new WechatCodeService(new WechatShareProperties("test-app", secret, "release", "https://example.test/watch/"), json, client);
+        return new WechatCodeService(new WechatShareProperties("test-app", secret, "release", "https://example.test/watch/", "https://example.test/share/rooms/"), json, client);
     }
 
     @SuppressWarnings("unchecked")
@@ -49,7 +49,7 @@ class WechatCodeServiceTest {
         ArgumentCaptor<HttpRequest> requests = ArgumentCaptor.forClass(HttpRequest.class);
         verify(client, times(3)).send(requests.capture(), any());
         var payload = json.readTree(body(requests.getAllValues().get(1)));
-        assertThat(payload.path("page").asText()).isEqualTo("pages/watch/watch");
+        assertThat(payload.path("page").asText()).isEqualTo("pages/watch-share/watch-share");
         assertThat(payload.path("scene").asText()).isEqualTo("id=3");
         assertThat(payload.path("env_version").asText()).isEqualTo("release");
         assertThat(payload.path("check_path").asBoolean()).isTrue();
